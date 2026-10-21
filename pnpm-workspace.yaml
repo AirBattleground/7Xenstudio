@@ -1,0 +1,4 @@
+packages: []
+# own pnpm root: 7XEN Studio is independent of the 7xen monorepo around it
+allowBuilds:
+  esbuild: true
