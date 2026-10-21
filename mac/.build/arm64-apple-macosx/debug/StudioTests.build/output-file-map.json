@@ -1,0 +1,68 @@
+{
+  "": {
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/primary.swiftdeps"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Tests/StudioTests/ABGTests.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/ABGTests.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/ABGTests.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/ABGTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/ABGTests.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/ABGTests.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Tests/StudioTests/AudioTests.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/AudioTests.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/AudioTests.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/AudioTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/AudioTests.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/AudioTests.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Tests/StudioTests/CoreTests.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/CoreTests.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/CoreTests.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/CoreTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/CoreTests.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/CoreTests.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Tests/StudioTests/E2ETests.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/E2ETests.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/E2ETests.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/E2ETests~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/E2ETests.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/E2ETests.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Tests/StudioTests/EngineTests.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/EngineTests.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/EngineTests.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/EngineTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/EngineTests.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/EngineTests.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Tests/StudioTests/H264Tests.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/H264Tests.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/H264Tests.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/H264Tests~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/H264Tests.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/H264Tests.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Tests/StudioTests/OutputTests.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/OutputTests.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/OutputTests.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/OutputTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/OutputTests.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/OutputTests.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Tests/StudioTests/PhoneAudioLevelTests.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/PhoneAudioLevelTests.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/PhoneAudioLevelTests.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/PhoneAudioLevelTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/PhoneAudioLevelTests.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/PhoneAudioLevelTests.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Tests/StudioTests/PhoneProbeTests.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/PhoneProbeTests.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/PhoneProbeTests.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/PhoneProbeTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/PhoneProbeTests.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioTests.build/PhoneProbeTests.dia"
+  }
+}

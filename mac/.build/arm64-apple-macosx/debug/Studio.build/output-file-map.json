@@ -1,0 +1,425 @@
+{
+  "": {
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/primary.swiftdeps"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Core/AudioSettings.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AudioSettings.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AudioSettings.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AudioSettings~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AudioSettings.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AudioSettings.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Core/Devices.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Devices.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Devices.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Devices~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Devices.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Devices.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Core/Interfaces.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Interfaces.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Interfaces.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Interfaces~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Interfaces.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Interfaces.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Core/Store.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Store.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Store.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Store~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Store.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Store.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Core/Tokens.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Tokens.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Tokens.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Tokens~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Tokens.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Tokens.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Engine/AudioDSP.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AudioDSP.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AudioDSP.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AudioDSP~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AudioDSP.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AudioDSP.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Engine/AudioDevices.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AudioDevices.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AudioDevices.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AudioDevices~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AudioDevices.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AudioDevices.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Engine/AudioMixer.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AudioMixer.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AudioMixer.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AudioMixer~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AudioMixer.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AudioMixer.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Engine/FrameClock.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/FrameClock.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/FrameClock.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/FrameClock~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/FrameClock.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/FrameClock.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Engine/Layouts.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Layouts.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Layouts.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Layouts~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Layouts.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Layouts.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Engine/MetalCompositor.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MetalCompositor.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MetalCompositor.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MetalCompositor~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MetalCompositor.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MetalCompositor.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Engine/MetalShaders.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MetalShaders.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MetalShaders.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MetalShaders~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MetalShaders.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MetalShaders.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Engine/MonitorOutput.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MonitorOutput.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MonitorOutput.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MonitorOutput~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MonitorOutput.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MonitorOutput.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Engine/OverlayArt.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/OverlayArt.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/OverlayArt.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/OverlayArt~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/OverlayArt.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/OverlayArt.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Engine/OverlayImages.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/OverlayImages.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/OverlayImages.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/OverlayImages~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/OverlayImages.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/OverlayImages.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Engine/StudioEngine.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/StudioEngine.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/StudioEngine.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/StudioEngine~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/StudioEngine.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/StudioEngine.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Ingest/H264.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/H264.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/H264.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/H264~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/H264.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/H264.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Ingest/HTTPServer.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/HTTPServer.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/HTTPServer.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/HTTPServer~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/HTTPServer.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/HTTPServer.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Ingest/IngestService.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/IngestService.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/IngestService.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/IngestService~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/IngestService.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/IngestService.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Ingest/MediaMTXSupervisor.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MediaMTXSupervisor.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MediaMTXSupervisor.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MediaMTXSupervisor~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MediaMTXSupervisor.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MediaMTXSupervisor.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Ingest/MediaSources.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MediaSources.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MediaSources.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MediaSources~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MediaSources.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MediaSources.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Ingest/MicSource.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MicSource.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MicSource.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MicSource~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MicSource.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MicSource.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Ingest/PhoneAudioReader.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/PhoneAudioReader.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/PhoneAudioReader.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/PhoneAudioReader~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/PhoneAudioReader.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/PhoneAudioReader.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Ingest/PhoneSource.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/PhoneSource.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/PhoneSource.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/PhoneSource~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/PhoneSource.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/PhoneSource.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Integrations/AirBattleground/ABGController.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/ABGController.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/ABGController.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/ABGController~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/ABGController.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/ABGController.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Integrations/AirBattleground/ABGLink.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/ABGLink.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/ABGLink.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/ABGLink~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/ABGLink.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/ABGLink.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Integrations/AirBattleground/ABGModels.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/ABGModels.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/ABGModels.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/ABGModels~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/ABGModels.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/ABGModels.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Integrations/AirBattleground/ABGSecretStore.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/ABGSecretStore.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/ABGSecretStore.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/ABGSecretStore~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/ABGSecretStore.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/ABGSecretStore.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Integrations/AirBattleground/ABGViews.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/ABGViews.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/ABGViews.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/ABGViews~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/ABGViews.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/ABGViews.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Integrations/AirBattleground/AppModel+ABG.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AppModel+ABG.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AppModel+ABG.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AppModel+ABG~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AppModel+ABG.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AppModel+ABG.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Integrations/AirBattleground/BroadcastLinkService.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/BroadcastLinkService.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/BroadcastLinkService.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/BroadcastLinkService~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/BroadcastLinkService.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/BroadcastLinkService.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Integrations/AirBattleground/Registry.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Registry.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Registry.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Registry~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Registry.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Registry.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Integrations/AirBattleground/StudioLinkClient.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/StudioLinkClient.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/StudioLinkClient.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/StudioLinkClient~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/StudioLinkClient.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/StudioLinkClient.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Output/AudioEncoder.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AudioEncoder.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AudioEncoder.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AudioEncoder~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AudioEncoder.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AudioEncoder.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Output/FFmpegLocator.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/FFmpegLocator.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/FFmpegLocator.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/FFmpegLocator~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/FFmpegLocator.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/FFmpegLocator.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Output/FFmpegProcess.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/FFmpegProcess.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/FFmpegProcess.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/FFmpegProcess~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/FFmpegProcess.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/FFmpegProcess.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Output/OutputPipeline.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/OutputPipeline.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/OutputPipeline.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/OutputPipeline~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/OutputPipeline.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/OutputPipeline.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Output/TSMuxer.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/TSMuxer.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/TSMuxer.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/TSMuxer~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/TSMuxer.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/TSMuxer.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/Output/VideoEncoder.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/VideoEncoder.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/VideoEncoder.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/VideoEncoder~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/VideoEncoder.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/VideoEncoder.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/StressHarness.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/StressHarness.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/StressHarness.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/StressHarness~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/StressHarness.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/StressHarness.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/UI/AppModel.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AppModel.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AppModel.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AppModel~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AppModel.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AppModel.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/UI/AudioController.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AudioController.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AudioController.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AudioController~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AudioController.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AudioController.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/UI/AudioMixerPanel.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AudioMixerPanel.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AudioMixerPanel.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AudioMixerPanel~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AudioMixerPanel.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/AudioMixerPanel.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/UI/ConsoleView.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/ConsoleView.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/ConsoleView.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/ConsoleView~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/ConsoleView.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/ConsoleView.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/UI/Dialogs.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Dialogs.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Dialogs.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Dialogs~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Dialogs.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Dialogs.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/UI/MicSwitch.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MicSwitch.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MicSwitch.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MicSwitch~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MicSwitch.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MicSwitch.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/UI/MockServices.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MockServices.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MockServices.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MockServices~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MockServices.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/MockServices.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/UI/Monitors.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Monitors.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Monitors.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Monitors~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Monitors.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Monitors.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/UI/OverlaysPanel.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/OverlaysPanel.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/OverlaysPanel.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/OverlaysPanel~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/OverlaysPanel.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/OverlaysPanel.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/UI/Panels.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Panels.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Panels.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Panels~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Panels.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Panels.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/UI/PropsView.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/PropsView.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/PropsView.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/PropsView~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/PropsView.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/PropsView.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/UI/RealServices.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/RealServices.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/RealServices.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/RealServices~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/RealServices.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/RealServices.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/UI/RecordingsView.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/RecordingsView.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/RecordingsView.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/RecordingsView~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/RecordingsView.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/RecordingsView.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/UI/ScenesView.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/ScenesView.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/ScenesView.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/ScenesView~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/ScenesView.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/ScenesView.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/UI/Services.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Services.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Services.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Services~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Services.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Services.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/UI/SettingsView.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/SettingsView.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/SettingsView.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/SettingsView~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/SettingsView.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/SettingsView.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/UI/StudioApp.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/StudioApp.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/StudioApp.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/StudioApp~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/StudioApp.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/StudioApp.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/UI/StudioHome.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/StudioHome.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/StudioHome.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/StudioHome~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/StudioHome.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/StudioHome.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/UI/Theme.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Theme.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Theme.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Theme~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Theme.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/Theme.dia"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/Sources/Studio/main.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/main.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/main.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/main~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/main.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/Studio.build/main.dia"
+  }
+}

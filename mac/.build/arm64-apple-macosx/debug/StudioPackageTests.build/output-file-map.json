@@ -1,0 +1,12 @@
+{
+  "": {
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioPackageTests.build/primary.swiftdeps"
+  },
+  "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioPackageTests.derived/runner.swift": {
+    "dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioPackageTests.build/runner.d",
+    "object": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioPackageTests.build/runner.swift.o",
+    "swiftmodule": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioPackageTests.build/runner~partial.swiftmodule",
+    "swift-dependencies": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioPackageTests.build/runner.swiftdeps",
+    "diagnostics": "/Users/yogendra/Work/7Xenstudio/mac/.build/arm64-apple-macosx/debug/StudioPackageTests.build/runner.dia"
+  }
+}
