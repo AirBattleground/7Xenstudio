@@ -255,7 +255,7 @@ function Console({ show, mixer }: { show: Show; mixer: StudioMixer }) {
           )}
           {live ? (
             <Button variant="destructive" size="lg" data-tour="studio-golive" disabled={busy} onClick={() => setConfirm("end")}>
-              {stop.isPending ? <Loader2 className="animate-spin" /> : <Square className="fill-current" />} End show
+              {stop.isPending ? <Loader2 className="animate-spin" /> : <Square className="fill-current" />} {recordOnly ? "Stop recording" : "End show"}
             </Button>
           ) : mode === "none" ? (
             <Tooltip>
