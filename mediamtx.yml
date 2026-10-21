@@ -28,7 +28,9 @@ rtmpEncryption: "no"
 hls: yes
 hlsAddress: 127.0.0.1:8893
 hlsAlwaysRemux: yes
-hlsVariant: fmp4
+# low-latency HLS: 200 ms parts, so the Studio sees the phones ~1 s behind instead of several seconds
+hlsVariant: lowLatency
+hlsPartDuration: 200ms
 hlsSegmentCount: 7
 hlsSegmentDuration: 1s
 hlsAllowOrigin: ""

@@ -11,6 +11,8 @@ import { STUDIO_HEIGHT, STUDIO_WIDTH } from "../../shared/types.js";
  * alone and falls behind real time next to Chrome (which takes ~2.7 cores); veryfast runs at 2.3x.
  */
 export const X264_FASTER_CORES = 16;
+/** VAAPI render node (Intel/AMD GPU on Linux) */
+export const VAAPI_DEVICE = process.env.VAAPI_DEVICE || "/dev/dri/renderD128";
 
 export type Encoder = "h264_nvenc" | "h264_qsv" | "h264_amf" | "h264_videotoolbox" | "libx264" | (string & {});
 
@@ -24,7 +26,7 @@ export interface VideoOpts {
 /** Encoders worth trying on this platform, best first. */
 export function candidates(platform: NodeJS.Platform = process.platform): Encoder[] {
   if (platform === "darwin") return ["h264_videotoolbox", "libx264"];
-  return ["h264_nvenc", "h264_qsv", "h264_amf", "libx264"];
+  return ["h264_nvenc", "h264_qsv", "h264_vaapi", "h264_amf", "libx264"];
 }
 
 export function isHardware(encoder: Encoder): boolean {
@@ -47,13 +49,21 @@ export function videoArgs(encoder: Encoder, o: VideoOpts): string[] {
     case "h264_amf":
       codec = ["-c:v", "h264_amf", "-usage", "lowlatency", "-quality", "speed", "-rc", "cbr", "-bf", "0", "-profile:v", "high"];
       break;
+    case "h264_vaapi":
+      // Intel/AMD GPU on Linux (needs a VAAPI ffmpeg + driver, e.g. intel-media-va-driver): frames go up to the GPU
+      return [
+        "-vf", `scale=${STUDIO_WIDTH}:${STUDIO_HEIGHT},fps=${o.fps},format=nv12,hwupload`,
+        "-c:v", "h264_vaapi", "-rc_mode", "CBR", "-profile:v", "high", "-bf", "0",
+        ...rate, ...gop,
+      ];
     case "h264_videotoolbox":
       codec = ["-c:v", "h264_videotoolbox", "-realtime", "1", "-profile:v", "high", "-allow_sw", "1"];
       break;
     case "libx264":
       codec = [
         "-c:v", "libx264",
-        "-preset", o.cores >= X264_FASTER_CORES ? "faster" : "veryfast",
+        // superfast keeps 720p60 real-time on an ordinary 4-core PC (veryfast often can't, which shows as choppy video)
+        "-preset", o.cores >= X264_FASTER_CORES ? "faster" : "superfast",
         "-tune", "zerolatency",
         "-profile:v", "high",
         "-x264-params", "nal-hrd=cbr:force-cfr=1",
@@ -106,6 +116,7 @@ export function ffmpegArgs(encoder: Encoder, o: VideoOpts & { slaves: TeeSlave[]
   return [
     "-hide_banner", "-loglevel", "warning", "-nostats", "-y",
     "-fflags", "+genpts+discardcorrupt",
+    ...(encoder === "h264_vaapi" ? ["-vaapi_device", VAAPI_DEVICE] : []),
     "-f", "webm", "-i", "pipe:0",
     "-map", "0:v:0", "-map", "0:a:0?",
     ...videoArgs(encoder, o),
@@ -121,6 +132,7 @@ export function ffmpegArgs(encoder: Encoder, o: VideoOpts & { slaves: TeeSlave[]
 export function probeArgs(encoder: Encoder, o: VideoOpts): string[] {
   return [
     "-hide_banner", "-loglevel", "error",
+    ...(encoder === "h264_vaapi" ? ["-vaapi_device", VAAPI_DEVICE] : []),
     "-f", "lavfi", "-i", `color=c=black:s=${STUDIO_WIDTH}x${STUDIO_HEIGHT}:r=${o.fps}`,
     "-frames:v", "1",
     ...videoArgs(encoder, o),

@@ -20,7 +20,7 @@ describe("videoArgs", () => {
   it("libx264: CBR, keyframes every 2 s, yuv420p, 720p at the show fps", () => {
     const a = videoArgs("libx264", o);
     expect(after(a, "-c:v")).toBe("libx264");
-    expect(after(a, "-preset")).toBe("veryfast");
+    expect(after(a, "-preset")).toBe("superfast");
     expect(after(a, "-b:v")).toBe("6000k");
     expect(after(a, "-maxrate")).toBe("6000k");
     expect(after(a, "-bufsize")).toBe("12000k");
@@ -33,7 +33,7 @@ describe("videoArgs", () => {
   });
   it("libx264 uses 'faster' only on 16+ cores", () => {
     expect(after(videoArgs("libx264", { ...o, cores: 16 }), "-preset")).toBe("faster");
-    expect(after(videoArgs("libx264", { ...o, cores: 12 }), "-preset")).toBe("veryfast");
+    expect(after(videoArgs("libx264", { ...o, cores: 12 }), "-preset")).toBe("superfast");
   });
   it.each([
     ["h264_nvenc", ["-rc", "cbr"]],
@@ -55,7 +55,7 @@ describe("videoArgs", () => {
   it("candidates per platform, libx264 last", () => {
     expect(candidates("darwin")).toEqual(["h264_videotoolbox", "libx264"]);
     expect(candidates("linux").at(-1)).toBe("libx264");
-    expect(candidates("win32")).toEqual(["h264_nvenc", "h264_qsv", "h264_amf", "libx264"]);
+    expect(candidates("win32")).toEqual(["h264_nvenc", "h264_qsv", "h264_vaapi", "h264_amf", "libx264"]);
   });
 });
 
@@ -169,5 +169,17 @@ describe("ffmpeg stderr", () => {
   });
   it("redacts stream keys", () => {
     expect(redactKeys("Error rtmp://a.rtmp.youtube.com/live2/abcd-efgh-1234: refused")).toBe("Error rtmp://a.rtmp.youtube.com/live2/…: refused");
+  });
+});
+
+describe("h264_vaapi", () => {
+  it("uploads frames to the GPU and opens the render node before the input", async () => {
+    const { videoArgs: va, ffmpegArgs: fa } = await import("../src/server/pipeline/encoder.js");
+    const v = va("h264_vaapi", { fps: 60, kbps: 6000, cores: 8 });
+    expect(v.join(" ")).toContain("format=nv12,hwupload");
+    expect(v).toContain("h264_vaapi");
+    expect(v).not.toContain("-pix_fmt");
+    const f = fa("h264_vaapi", { fps: 60, kbps: 6000, cores: 8, slaves: [] });
+    expect(f.indexOf("-vaapi_device")).toBeLessThan(f.indexOf("-i"));
   });
 });
