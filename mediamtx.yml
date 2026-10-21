@@ -1,0 +1,43 @@
+# 7XEN Studio: MediaMTX receives the phones' RTMP over the venue Wi-Fi and serves HLS to the studio server (same PC).
+# Every publish/read is checked by the studio server (POST /internal/media/auth):
+#   publish  live/dev_<deviceId>?token=<signed, 10 min>   (token from POST /api/device/stream/start)
+#   publish  live/show_<showId>   only from this PC (the renderer's "Program out" preview copy)
+#   read     only from this PC, or with the studio's internal user/pass (derived from data/secret)
+# Ports are overridden with MTX_* env vars by docker-compose.yml (MEDIA_RTMP_PORT / MEDIA_HLS_PORT / MEDIA_API_PORT /
+# PORT), so this file stays the same everywhere.
+
+logLevel: info
+logDestinations: [stdout]
+
+authMethod: http
+authHTTPAddress: http://127.0.0.1:4400/internal/media/auth
+authHTTPExclude:
+  - action: metrics
+  - action: pprof
+
+# control API (path state, kick a removed phone); the server calls it with its internal credentials. Keep it off the LAN.
+api: yes
+apiAddress: 127.0.0.1:9994
+
+# phones publish here: open TCP 1940 in the PC's firewall for the venue Wi-Fi
+rtmp: yes
+rtmpAddress: :1940
+rtmpEncryption: "no"
+
+# HLS for the server's proxy (local only; browsers get it same-origin via /api/devices/<id>/live/ and /api/shows/<id>/live/)
+hls: yes
+hlsAddress: 127.0.0.1:8893
+hlsAlwaysRemux: yes
+hlsVariant: fmp4
+hlsSegmentCount: 7
+hlsSegmentDuration: 1s
+hlsAllowOrigin: ""
+
+rtsp: no
+webrtc: no
+srt: no
+
+paths:
+  # dev_ = a phone's camera (phone publishes), show_ = the finished show's preview copy (renderer publishes)
+  "~^live/(dev|show)_[A-Za-z0-9]{8,40}$":
+    source: publisher

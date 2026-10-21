@@ -211,7 +211,7 @@ export interface Show {
   videoKbps: number;
   state: "IDLE" | "LIVE";
   liveSince: string | null;
-  /** linked to an integration event (e.g. an AirBattleground match) and its outputs — null = local only */
+  /** linked to an integration event (e.g. a match on a connected platform) and its outputs — null = local only */
   link: ShowLink | null;
 }
 export interface ShowLink {
@@ -283,6 +283,8 @@ export interface ShowStatus {
   renderer: { state: RendererState; fps: number | null; encoder: string | null; bitrateKbps: number | null; error: string | null };
   outputs: { id: string; name: string; kind: "record" | "rtmp" | "preview"; ok: boolean; error: string | null }[];
   recordingFile: string | null;
+  /** additive: the linked integration (null/absent = local only) */
+  integration?: ShowIntegrationStatus | null;
 }
 
 /** What the render page reports through window.__swStatus. */
@@ -345,3 +347,21 @@ export interface IntegrationOutput {
 export const connectIntegrationSchema = z.object({ link: z.string().trim().min(4, "Scan the QR or paste the link").max(500) });
 export const CAPTURE_KINDS = ["SLOT_LIST", "RESULTS"] as const;
 export type CaptureKind = (typeof CAPTURE_KINDS)[number];
+
+// ---------------------------------------------------------------- server additions (additive)
+
+/** The render page authenticates its GETs with the render token: `?t=<token>` or this header (cookie substitute when a PIN is set). */
+export const RENDER_TOKEN_HEADER = "X-Render-Token";
+export const RENDER_TOKEN_PARAM = "t";
+/** device keys look like 7xk_<random> (same as the 7XEN Stream app already expects) */
+export const DEVICE_KEY_PREFIX = "7xk_";
+/** a phone counts as online when its last heartbeat is at most this old */
+export const DEVICE_ONLINE_WINDOW_MS = 30_000;
+/** ShowStatus.integration (optional, additive): the linked integration's broadcast while live */
+export interface ShowIntegrationStatus {
+  id: string;
+  name: string;
+  broadcastId: string | null;
+  watchUrl: string | null;
+  error: string | null;
+}

@@ -1,0 +1,288 @@
+/*
+ * 7XEN Studio theme: shadcn/ui tokens, light + dark (copied from the 7xen UI kit, teal brand baked in).
+ * ThemeProvider toggles the `dark` class on <html>. Use tokens only (bg-card, text-muted-foreground, …).
+ */
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@source "../";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --radius: 0.75rem;
+
+  /* light mode is deliberately soft (no pure white anywhere): cream page, cards a lighter cream, warm ink instead of black */
+  --background: oklch(0.94 0.02 85);
+  --foreground: oklch(0.27 0.018 65);
+  --card: oklch(0.965 0.015 88);
+  --card-foreground: oklch(0.27 0.018 65);
+  --popover: oklch(0.97 0.014 88);
+  --popover-foreground: oklch(0.27 0.018 65);
+  --primary: oklch(0.66 0.21 40);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.91 0.022 82);
+  --secondary-foreground: oklch(0.3 0.02 65);
+  --muted: oklch(0.91 0.022 82);
+  --muted-foreground: oklch(0.48 0.022 65);
+  --accent: oklch(0.95 0.025 45);
+  --accent-foreground: oklch(0.38 0.12 38);
+  --destructive: oklch(0.58 0.22 27);
+  --border: oklch(0.87 0.022 80);
+  --input: oklch(0.85 0.025 80);
+  --ring: oklch(0.66 0.21 40);
+
+  --success: oklch(0.62 0.17 150);
+  --success-foreground: oklch(0.99 0 0);
+  --warning: oklch(0.72 0.16 75);
+  --warning-foreground: oklch(0.2 0.03 70);
+  --info: oklch(0.6 0.15 240);
+  --info-foreground: oklch(0.99 0 0);
+
+  --chart-1: oklch(0.66 0.21 40);
+  --chart-2: oklch(0.6 0.15 240);
+  --chart-3: oklch(0.62 0.17 150);
+  --chart-4: oklch(0.72 0.16 75);
+  --chart-5: oklch(0.58 0.2 320);
+
+  --sidebar: oklch(0.925 0.022 84);
+  --sidebar-foreground: oklch(0.29 0.018 65);
+  --sidebar-primary: oklch(0.66 0.21 40);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.94 0.02 45);
+  --sidebar-accent-foreground: oklch(0.35 0.1 38);
+  --sidebar-border: oklch(0.86 0.022 80);
+  --sidebar-ring: oklch(0.66 0.21 40);
+
+  /* decorative */
+  --glow: oklch(0.66 0.21 40 / 0.35);
+  --grid-line: oklch(0.3 0.03 70 / 0.05);
+  --aurora-1: oklch(0.8 0.15 45 / 0.45);
+  --aurora-2: oklch(0.75 0.12 240 / 0.3);
+  --aurora-3: oklch(0.78 0.14 320 / 0.22);
+
+  /* brand scale (ember) — the logo and text-gradient-brand use it */
+  --brand-50: oklch(0.98 0.02 55);
+  --brand-100: oklch(0.95 0.045 55);
+  --brand-200: oklch(0.9 0.09 52);
+  --brand-300: oklch(0.83 0.14 48);
+  --brand-400: oklch(0.75 0.18 44);
+  --brand-500: oklch(0.68 0.21 40);
+  --brand-600: oklch(0.6 0.21 36);
+  --brand-700: oklch(0.51 0.18 34);
+  --brand-800: oklch(0.43 0.14 33);
+  --brand-900: oklch(0.37 0.11 33);
+  --brand-950: oklch(0.24 0.08 33);
+  /* 7XEN Studio: teal brand */
+  --primary: oklch(0.42 0.108 195);
+  --ring: oklch(0.42 0.12 195);
+  --accent: oklch(0.95 0.03 195);
+  --accent-foreground: oklch(0.36 0.072 195);
+  --chart-1: oklch(0.42 0.12 195);
+  --glow: oklch(0.42 0.12 195 / 0.35);
+
+}
+
+.dark {
+  --background: oklch(0.145 0.015 265);
+  --foreground: oklch(0.96 0.005 260);
+  --card: oklch(0.19 0.018 265);
+  --card-foreground: oklch(0.96 0.005 260);
+  --popover: oklch(0.2 0.02 265);
+  --popover-foreground: oklch(0.96 0.005 260);
+  --primary: oklch(0.7 0.2 42);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.25 0.02 265);
+  --secondary-foreground: oklch(0.94 0.005 260);
+  --muted: oklch(0.24 0.018 265);
+  --muted-foreground: oklch(0.68 0.02 262);
+  --accent: oklch(0.28 0.04 40);
+  --accent-foreground: oklch(0.9 0.06 50);
+  --destructive: oklch(0.65 0.21 25);
+  --border: oklch(1 0 0 / 0.09);
+  --input: oklch(1 0 0 / 0.13);
+  --ring: oklch(0.7 0.2 42);
+
+  --success: oklch(0.72 0.18 150);
+  --success-foreground: oklch(0.16 0.03 150);
+  --warning: oklch(0.82 0.16 85);
+  --warning-foreground: oklch(0.2 0.04 80);
+  --info: oklch(0.72 0.14 235);
+  --info-foreground: oklch(0.16 0.03 240);
+
+  --sidebar: oklch(0.165 0.017 265);
+  --sidebar-foreground: oklch(0.92 0.005 260);
+  --sidebar-primary: oklch(0.7 0.2 42);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.26 0.035 40);
+  --sidebar-accent-foreground: oklch(0.95 0.04 55);
+  --sidebar-border: oklch(1 0 0 / 0.08);
+  --sidebar-ring: oklch(0.7 0.2 42);
+
+  --glow: oklch(0.7 0.2 42 / 0.45);
+  --grid-line: oklch(1 0 0 / 0.04);
+  --aurora-1: oklch(0.6 0.2 40 / 0.35);
+  --aurora-2: oklch(0.5 0.16 260 / 0.35);
+  --aurora-3: oklch(0.5 0.18 320 / 0.25);
+  /* 7XEN Studio: teal brand */
+  --primary: oklch(0.74 0.12 195);
+  --primary-foreground: oklch(0.17 0.04 195);
+  --ring: oklch(0.74 0.12 195);
+  --accent: oklch(0.28 0.045 195);
+  --accent-foreground: oklch(0.9 0.048 195);
+  --chart-1: oklch(0.74 0.12 195);
+  --glow: oklch(0.74 0.12 195 / 0.45);
+  --background: oklch(0.15 0.022 205);
+  --card: oklch(0.195 0.03 200);
+  --popover: oklch(0.205 0.032 200);
+  --secondary: oklch(0.25 0.035 198);
+  --muted: oklch(0.24 0.032 198);
+  --border: oklch(0.85 0.06 195 / 0.1);
+
+}
+
+@theme inline {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Rajdhani", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* brand scale (same in both themes; set per brand preset in :root / [data-brand]) */
+  --color-brand-50: var(--brand-50);
+  --color-brand-100: var(--brand-100);
+  --color-brand-200: var(--brand-200);
+  --color-brand-300: var(--brand-300);
+  --color-brand-400: var(--brand-400);
+  --color-brand-500: var(--brand-500);
+  --color-brand-600: var(--brand-600);
+  --color-brand-700: var(--brand-700);
+  --color-brand-800: var(--brand-800);
+  --color-brand-900: var(--brand-900);
+  --color-brand-950: var(--brand-950);
+
+  --shadow-glow: 0 0 0 1px var(--glow), 0 10px 40px -12px var(--glow);
+
+  --animate-aurora: aurora 18s ease-in-out infinite alternate;
+  --animate-float: float 6s ease-in-out infinite;
+  --animate-shine: shine 2.6s linear infinite;
+  --animate-pulse-ring: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  --animate-rise: rise 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+
+  @keyframes aurora {
+    0% { transform: translate3d(0, 0, 0) scale(1) rotate(0deg); }
+    50% { transform: translate3d(6%, -4%, 0) scale(1.15) rotate(20deg); }
+    100% { transform: translate3d(-6%, 5%, 0) scale(0.95) rotate(-15deg); }
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+  }
+  @keyframes shine {
+    from { background-position: 200% 0; }
+    to { background-position: -200% 0; }
+  }
+  @keyframes pulse-ring {
+    0%, 100% { box-shadow: 0 0 0 0 var(--glow); }
+    50% { box-shadow: 0 0 0 8px transparent; }
+  }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(14px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+}
+
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  html { color-scheme: light; }
+  html.dark { color-scheme: dark; }
+  body { @apply bg-background text-foreground antialiased; font-family: var(--font-sans); }
+  /* app-like on phones: no grey tap flash, no rubber-band reveal of the page edge */
+  html { -webkit-tap-highlight-color: transparent; }
+  body { overscroll-behavior-y: none; }
+  button, a, [role="button"] { touch-action: manipulation; }
+  /* everything clickable shows the hand cursor (Tailwind v4 resets buttons to cursor: default); utilities still override */
+  :where(button, a[href], summary, select, label[for], [role="button"], [role="link"], [role="tab"], [role="menuitem"],
+    [role="menuitemcheckbox"], [role="menuitemradio"], [role="option"], [role="checkbox"], [role="radio"], [role="switch"],
+    [role="combobox"], [role="slider"], input[type="checkbox"], input[type="radio"], input[type="file"], input[type="range"],
+    input[type="color"], input[type="submit"], input[type="button"], input[type="reset"], [data-clickable]) { cursor: pointer; }
+  :where(button, [role="button"], [role="tab"], [role="menuitem"], [role="option"], [role="checkbox"], [role="radio"],
+    [role="switch"], select, input):where(:disabled, [aria-disabled="true"], [data-disabled]) { cursor: not-allowed; }
+  h1, h2, h3, .font-display { font-family: var(--font-display); letter-spacing: 0.01em; }
+  ::selection { background: var(--glow); }
+  * { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+}
+
+/* smooth cross-fade of every colour when the theme flips (class added briefly by ThemeProvider) */
+html.theme-transition,
+html.theme-transition *,
+html.theme-transition *::before,
+html.theme-transition *::after {
+  transition:
+    background-color 450ms ease,
+    border-color 450ms ease,
+    color 300ms ease,
+    fill 450ms ease,
+    stroke 450ms ease,
+    box-shadow 450ms ease !important;
+  transition-delay: 0ms !important;
+}
+
+@utility bg-grid {
+  background-image:
+    linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+@utility text-gradient-brand {
+  background: linear-gradient(100deg, var(--color-brand-300), var(--color-brand-500) 45%, var(--color-brand-700) 90%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+@utility clip-angle {
+  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
+}
+

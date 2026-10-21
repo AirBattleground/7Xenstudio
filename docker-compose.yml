@@ -1,0 +1,19 @@
+# 7XEN Studio: media server (MediaMTX) on the host network.
+#   docker compose up -d        (from the studio-app folder)
+# Defaults: RTMP :1940 (phones; open it in the firewall) · HLS 127.0.0.1:8893 · API 127.0.0.1:9994 · auth hook → :4400.
+# Change ports with MEDIA_RTMP_PORT / MEDIA_HLS_PORT / MEDIA_API_PORT / PORT (compose reads .env in this folder), and keep
+# MEDIA_HLS_URL / MEDIA_API_URL in .env in step.
+name: 7xen-studio
+services:
+  media:
+    image: bluenviron/mediamtx:1.9.3
+    container_name: ${MEDIA_CONTAINER:-7xen-studio-media}
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      MTX_RTMPADDRESS: ":${MEDIA_RTMP_PORT:-1940}"
+      MTX_HLSADDRESS: "127.0.0.1:${MEDIA_HLS_PORT:-8893}"
+      MTX_APIADDRESS: "127.0.0.1:${MEDIA_API_PORT:-9994}"
+      MTX_AUTHHTTPADDRESS: "http://127.0.0.1:${PORT:-4400}/internal/media/auth"
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml:ro
