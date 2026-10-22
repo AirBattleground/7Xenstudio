@@ -50,7 +50,11 @@ struct SceneCard: View {
         .accessibilityHint("Click to preview, double-click to take")
         .accessibilityAddTraits(.isButton)
     }
-    func label(_ s: SourceRef?) -> String { sourceLabel(s, model.devices) }
+    func label(_ s: SourceRef?) -> String {
+        var t = sourceLabel(s, model.devices)
+        if case .device(let id)? = s, let d = model.devices.first(where: { $0.id == id }), d.videoReady, let q = d.qualityLabel?.split(separator: " ").first { t += (d.lowQuality ? " ⚠ " : " ") + q }
+        return t
+    }
 }
 
 /// Live mini-monitor when the scene is on program/preview, otherwise a generated layout glyph.
@@ -174,6 +178,19 @@ struct SceneEditor: View {
                             Section("Props") { ForEach(model.props) { Text($0.name).tag(($0.isVideo ? "prop:" : "image:") + $0.id) } }
                         }
                         Section("Web") { Text("Image from a web address").tag("web") }
+                    }
+                    if i < draft.slots.count, case .device(let did)? = draft.slots[i], let dev = model.devices.first(where: { $0.id == did }) {
+                        HStack(spacing: 10) {
+                            if let q = dev.qualityLabel { Text(q).font(Theme.Font.mono(10)).foregroundStyle(dev.lowQuality ? Theme.warn : Theme.muted) }
+                            Spacer()
+                            RotateMenu(d: dev).menuStyle(.borderlessButton).fixedSize()
+                        }
+                        if let w = dev.qualityWarning { QualityWarningChip(text: w) }
+                    }
+                    if i < draft.slots.count, draft.slots[i] != nil, draft.slots[i] != .slate {
+                        Picker("Picture", selection: Binding(get: { draft.fit(i) }, set: { draft.setFit(i, $0) })) {
+                            Text("Fill (crop to cover)").tag(false); Text("Fit (show everything)").tag(true)
+                        }.pickerStyle(.segmented)
                     }
                     if i < draft.slots.count, case .web(let url)? = draft.slots[i] {
                         TextField("https://… (an image that updates)", text: Binding(get: { url }, set: { draft.slots[i] = .web(url: $0.trimmingCharacters(in: .whitespaces)) })).textFieldStyle(.roundedBorder)

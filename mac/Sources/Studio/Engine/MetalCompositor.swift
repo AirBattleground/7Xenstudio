@@ -15,7 +15,17 @@ struct QuadU {
     var p = SIMD4<Float>(0, 0, 0, 1)     // kind, radius, border, opacity
     var q = SIMD4<Float>(0, 0, 0, 0)     // canvas w,h, r0, r1
 }
-private struct ConvU { var a = SIMD4<Float>(0, 1, 0.5, 1); var b = SIMD4<Float>(0.2126, 0.0722, 0, 0) }
+private struct ConvU {
+    var a = SIMD4<Float>(0, 1, 0.5, 1); var b = SIMD4<Float>(0.2126, 0.0722, 0, 0)       // b.z: transfer 0 BT.709, 1 sRGB, 2 gamma 2.2
+    var m0 = SIMD4<Float>(1, 0, 0, 0), m1 = SIMD4<Float>(0, 1, 0, 0), m2 = SIMD4<Float>(0, 0, 1, 0)   // linear primaries -> BT.709
+}
+private struct VividU { var v = SIMD4<Float>(1, 0, 0, 0) }   // saturation, contrast, sharpen, on
+/// Display P3 (D65) -> BT.709/sRGB primaries, linear light.
+private let p3ToRec709: (SIMD4<Float>, SIMD4<Float>, SIMD4<Float>) = (
+    SIMD4<Float>(1.2249401, -0.2249404, 0, 0), SIMD4<Float>(-0.0420569, 1.0420571, 0, 0), SIMD4<Float>(-0.0196376, -0.0786361, 1.0982735, 0))
+/// BT.2020 -> BT.709, linear light.
+private let rec2020ToRec709: (SIMD4<Float>, SIMD4<Float>, SIMD4<Float>) = (
+    SIMD4<Float>(1.6604910, -0.5876411, -0.0728499, 0), SIMD4<Float>(-0.1245505, 1.1328999, -0.0083494, 0), SIMD4<Float>(-0.0181508, -0.1005789, 1.1187297, 0))
 
 struct FrameRequest {
     var program: Scene?
@@ -84,6 +94,22 @@ final class MetalCompositor {
     private let inflight = DispatchSemaphore(value: 3)
     private var lastBuffers: [SourceRef: CVPixelBuffer] = [:]
     private var sprites: [String: MTLTexture] = [:]
+    /// measurement aid: 0 = plain bilinear upscale (old behaviour), 1 = Catmull-Rom only, 2 = Catmull-Rom + limited sharpening (default)
+    var debugUpscaleMode = Int(ProcessInfo.processInfo.environment["STUDIO_UPSCALE_MODE"] ?? "") ?? 2
+    private let cfgLock = NSLock()
+    private var _transforms: [SourceRef: SourceTransform] = [:]
+    private var _vivid = VividLevel.off
+    /// Per-source rotation / flip (set from the UI thread).
+    func setTransforms(_ t: [SourceRef: SourceTransform]) { cfgLock.lock(); _transforms = t; cfgLock.unlock() }
+    var vivid: VividLevel { get { cfgLock.lock(); defer { cfgLock.unlock() }; return _vivid } set { cfgLock.lock(); _vivid = newValue; cfgLock.unlock() } }
+    private func transform(_ r: SourceRef) -> SourceTransform { cfgLock.lock(); defer { cfgLock.unlock() }; return _transforms[r] ?? .identity }
+    private func vividParams(sharpen: Bool) -> VividU {
+        switch vivid {
+        case .off: return VividU()
+        case .subtle: return VividU(v: SIMD4(1.08, 0.20, sharpen ? 0.20 : 0, 1))
+        case .strong: return VividU(v: SIMD4(1.16, 0.35, sharpen ? 0.35 : 0, 1))
+        }
+    }
     let overlayImages = OverlayImageCache()
     private let outPool: CVPixelBufferPool
     let previewWidth: Int, previewHeight: Int
@@ -281,9 +307,11 @@ final class MetalCompositor {
             }
         }
     }
-    private func presentPass(_ cb: MTLCommandBuffer, _ src: MTLTexture, into dst: MTLTexture) {
+    private func presentPass(_ cb: MTLCommandBuffer, _ src: MTLTexture, into dst: MTLTexture, sharpen: Bool = true) {
+        var vu = vividParams(sharpen: sharpen)
         pass(cb, dst, clear: false, pso: outPSO) { e in
             e.setFragmentTexture(src, index: 0)
+            e.setFragmentBytes(&vu, length: MemoryLayout<VividU>.size, index: 0)
             e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         }
     }
@@ -291,7 +319,7 @@ final class MetalCompositor {
         let small = fr.tex(device, previewWidth, previewHeight)
         lanczos.scaleTransform = nil
         lanczos.encode(commandBuffer: cb, sourceTexture: canvas, destinationTexture: small)
-        if let t = mapTexture(pb, plane: 0, .bgra8Unorm, usage: [.renderTarget, .shaderRead], fr: fr) { presentPass(cb, small, into: t) }
+        if let t = mapTexture(pb, plane: 0, .bgra8Unorm, usage: [.renderTarget, .shaderRead], fr: fr) { presentPass(cb, small, into: t, sharpen: false) }
     }
 
     // MARK: conversion
@@ -320,11 +348,21 @@ final class MetalCompositor {
             if video {
                 cu.a = SIMD4<Float>(Float(ten ? 64 : 16) / m * sh, m / (ten ? 876 : 219), (ten ? 512 : 128) / m, m / (ten ? 896 : 224))
             } else { cu.a = SIMD4<Float>(0, 1, (ten ? 512 : 128) / m, 1) }
-            var bt601 = false
+            // matrix: tagged value wins; untagged streams follow the convention (HD = BT.709, SD / below 720p = BT.601)
+            var kr: Float = 0.2126, kb: Float = 0.0722
             if let mx = CVBufferCopyAttachment(pb, kCVImageBufferYCbCrMatrixKey, nil) as? String {
-                bt601 = mx == (kCVImageBufferYCbCrMatrix_ITU_R_601_4 as String)
-            } else { bt601 = h < 720 }
-            cu.b = bt601 ? SIMD4<Float>(0.299, 0.114, 0, 0) : SIMD4<Float>(0.2126, 0.0722, 0, 0)
+                if mx == (kCVImageBufferYCbCrMatrix_ITU_R_601_4 as String) { kr = 0.299; kb = 0.114 }
+                else if mx == (kCVImageBufferYCbCrMatrix_ITU_R_2020 as String) { kr = 0.2627; kb = 0.0593 }
+            } else if h < 720 { kr = 0.299; kb = 0.114 }
+            cu.b = SIMD4<Float>(kr, kb, 0, 0)
+            if let tf = CVBufferCopyAttachment(pb, kCVImageBufferTransferFunctionKey, nil) as? String {
+                if tf == (kCVImageBufferTransferFunction_sRGB as String) { cu.b.z = 1 }
+                else if tf == (kCVImageBufferTransferFunction_UseGamma as String) { cu.b.z = 2 }
+            }
+            if let pr = CVBufferCopyAttachment(pb, kCVImageBufferColorPrimariesKey, nil) as? String {
+                if pr == (kCVImageBufferColorPrimaries_P3_D65 as String) { (cu.m0, cu.m1, cu.m2) = p3ToRec709 }
+                else if pr == (kCVImageBufferColorPrimaries_ITU_R_2020 as String) { (cu.m0, cu.m1, cu.m2) = rec2020ToRec709 }
+            }
             ce.setComputePipelineState(convNV12)
             ce.setTexture(y, index: 0); ce.setTexture(c, index: 1); ce.setTexture(out, index: 2)
             ce.setBytes(&cu, length: MemoryLayout<ConvU>.size, index: 0)
@@ -364,12 +402,12 @@ final class MetalCompositor {
         for (i, sr) in rects.enumerated() {
             let r = CGRect(x: sr.rect.minX.rounded(), y: sr.rect.minY.rounded(), width: sr.rect.width.rounded(), height: sr.rect.height.rounded())
             let ref: SourceRef? = i < scene.slots.count ? scene.slots[i] : nil
-            items += slotItems(ref, r, framed: sr.framed, srcs, fr, cb)
+            items += slotItems(ref, r, framed: sr.framed, fit: scene.fit(i), srcs, fr, cb)
         }
         return items
     }
 
-    private func slotItems(_ ref: SourceRef?, _ r: CGRect, framed: Bool, _ srcs: [SourceRef: SrcTex], _ fr: FrameRes, _ cb: MTLCommandBuffer) -> [Item] {
+    private func slotItems(_ ref: SourceRef?, _ r: CGRect, framed: Bool, fit: Bool, _ srcs: [SourceRef: SrcTex], _ fr: FrameRes, _ cb: MTLCommandBuffer) -> [Item] {
         let rad = framed ? Float(12 * S) : 0, bw = framed ? Float(1.5 * S) : 0
         let w = Int(r.width), h = Int(r.height)
         func labelled(_ bg: UInt32, _ text: String) -> [Item] {
@@ -384,12 +422,16 @@ final class MetalCompositor {
             return labelled(0x0D1418, "Loading…")
         }
         var u = quad(r, kind: 0, radius: rad, border: bw)
-        let ew = CGFloat(st.w), eh = CGFloat(st.h)
+        let xf = transform(ref)
+        let odd = xf.quarterTurns % 2 == 1
+        let ew = CGFloat(odd ? st.h : st.w), eh = CGFloat(odd ? st.w : st.h)       // display-space source size (after rotation)
         var items: [Item] = []
-        var contain = false
+        var contain = fit
         if case .image = ref { contain = true }
         var tex = st.tex
         var target = r
+        var upscale: CGFloat = 1
+        func srcDims(_ dw: Int, _ dh: Int) -> (Int, Int) { odd ? (dh, dw) : (dw, dh) }
         if contain {
             let sc = min(r.width / ew, r.height / eh)
             let dw = (ew * sc).rounded(), dh = (eh * sc).rounded()
@@ -397,17 +439,24 @@ final class MetalCompositor {
             target = CGRect(x: r.minX + ((r.width - dw) / 2).rounded(), y: r.minY + ((r.height - dh) / 2).rounded(), width: dw, height: dh)
             u = quad(target, kind: 0)
             if sc < 0.999 {
-                tex = scaled(st.tex, to: (Int(dw), Int(dh)), scaleX: Double(dw / ew), scaleY: Double(dh / eh), tx: 0, ty: 0, fr, cb)
-            }
+                let (sw, sh) = srcDims(Int(dw), Int(dh))
+                tex = scaled(st.tex, to: (sw, sh), scaleX: Double(CGFloat(sw) / CGFloat(st.w)), scaleY: Double(CGFloat(sh) / CGFloat(st.h)), tx: 0, ty: 0, fr, cb)
+            } else if abs(sc - 1) > 0.001 { upscale = sc }
         } else {
             let s = max(r.width / ew, r.height / eh)
             if s < 0.999 {
-                tex = scaled(st.tex, to: (w, h), scaleX: Double(s), scaleY: Double(s), tx: Double((r.width - ew * s) / 2), ty: Double((r.height - eh * s) / 2), fr, cb)
+                let (sw, sh) = srcDims(w, h)
+                let sx = CGFloat(st.w) * s, sy = CGFloat(st.h) * s
+                tex = scaled(st.tex, to: (sw, sh), scaleX: Double(s), scaleY: Double(s), tx: Double((CGFloat(sw) - sx) / 2), ty: Double((CGFloat(sh) - sy) / 2), fr, cb)
             } else {
                 let c = LayoutMath.coverCrop(srcW: ew, srcH: eh, dstW: r.width, dstH: r.height)
                 u.uv = SIMD4(Float(c.minX / ew), Float(c.minY / eh), Float(c.maxX / ew), Float(c.maxY / eh))
+                if abs(s - 1) > 0.001 { upscale = s }
             }
         }
+        // sources smaller than their slot: Catmull-Rom + mild limited-halo sharpening; exact 1:1 stays a plain texel read
+        if upscale > 1, debugUpscaleMode != 0 { u.p.x = 4; u.c0.x = debugUpscaleMode == 1 ? 0 : debugUpscaleMode == 3 ? 0.8 : debugUpscaleMode == 4 ? 1.2 : (upscale >= 2 ? 0.5 : upscale >= 1.25 ? 0.35 : 0.2) }
+        u.c1.z = xf.flip ? 1 : 0; u.c1.w = Float(xf.quarterTurns)
         if ref == .camera { u.uv = SIMD4(u.uv.z, u.uv.y, u.uv.x, u.uv.w) }   // mirror the webcam
         items.append(.slot(u, tex))
         return items

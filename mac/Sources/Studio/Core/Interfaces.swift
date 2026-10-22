@@ -6,7 +6,23 @@ import CoreMedia
 let studioWidth = 1920
 let studioHeight = 1080
 let defaultFPS = 60
-let defaultVideoKbps = 12_000
+let defaultVideoKbps = 15_000     // YouTube recommends 9-15 Mbps for 1080p60
+/// Video bitrate presets for Settings (kbps).
+let videoBitratePresets: [(name: String, kbps: Int)] = [("Balanced 9 Mbps", 9_000), ("High 12 Mbps", 12_000), ("Studio 15 Mbps", 15_000), ("Max 18 Mbps", 18_000)]
+
+/// Quarter-turn rotation (clockwise) and horizontal flip applied to a source in its slot.
+struct SourceTransform: Equatable, Codable, Hashable {
+    var quarterTurns = 0      // 0...3, clockwise
+    var flip = false
+    static let identity = SourceTransform()
+    init(quarterTurns: Int = 0, flip: Bool = false) { self.quarterTurns = ((quarterTurns % 4) + 4) % 4; self.flip = flip }
+    init(degrees: Int, flip: Bool = false) { self.init(quarterTurns: degrees / 90, flip: flip) }
+    var degrees: Int { quarterTurns * 90 }
+}
+/// Final-pass enhancement ("Vivid"): 0 off, 1 subtle, 2 strong.
+enum VividLevel: Int, CaseIterable, Codable { case off = 0, subtle = 1, strong = 2
+    var label: String { ["Off", "Subtle", "Strong"][rawValue] }
+}
 
 /// What a scene slot shows. Mirrors src/shared/types.ts SourceRef.
 enum SourceRef: Codable, Hashable {
@@ -15,6 +31,14 @@ enum SourceRef: Codable, Hashable {
 enum LayoutKind: String, Codable, CaseIterable { case full, side, pip, desk, trio }
 struct Scene: Codable, Identifiable, Hashable {
     var id: String; var name: String; var layout: LayoutKind; var slots: [SourceRef?]
+    /// additive: per-slot "fit" (letterbox the whole source) instead of the default fill (crop to cover); nil = all fill
+    var fits: [Bool]? = nil
+    func fit(_ i: Int) -> Bool { (fits.flatMap { i < $0.count ? $0[i] : nil }) ?? false }
+    mutating func setFit(_ i: Int, _ on: Bool) {
+        var f = fits ?? []
+        while f.count <= i { f.append(false) }
+        f[i] = on; fits = f.contains(true) ? f : nil
+    }
 }
 struct Overlays: Codable, Hashable {
     var liveBug = false, lowerThird = false, ticker = false

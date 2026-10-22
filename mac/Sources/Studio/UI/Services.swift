@@ -12,6 +12,43 @@ struct DeviceInfo: Identifiable, Hashable {
     var videoReady = false
     var battery: Int? = nil
     var model: String? = nil
+    /// Live source quality (decoded picture size, decoded fps, measured incoming video bitrate, phone-reported values)
+    var width = 0, height = 0
+    var decodedFPS = 0.0
+    var ingestKbps = 0.0
+    var reportedKbps: Double? = nil
+    var quality: String? = nil
+    var autoDowngraded = false
+    var network: String? = nil
+    /// Effective rotation (degrees clockwise) / flip applied in the compositor; `rotationAuto` = no manual choice (phone-reported or none)
+    var rotation = 0
+    var flip = false
+    var rotationAuto = true
+}
+extension DeviceInfo {
+    /// "1080p · 4.2 Mbps"
+    var qualityLabel: String? {
+        guard videoReady, height > 0 else { return nil }
+        let r = "\(min(width, height))p"      // portrait phones report 1080x1920
+        let mb = ingestKbps > 0 ? String(format: " · %.1f Mbps", ingestKbps / 1000) : ""
+        return r + mb
+    }
+    var lowQuality: Bool { videoReady && ((height > 0 && min(width, height) < 720) || autoDowngraded) }
+    /// Amber warning text, nil when the source is fine.
+    var qualityWarning: String? {
+        guard lowQuality else { return nil }
+        let r = height > 0 ? "\(min(width, height))p" : "low-res"
+        let mb = ingestKbps > 0 ? String(format: " · %.1f Mbps", ingestKbps / 1000) : ""
+        return "\(r)\(mb) — phone is sending low quality" + (autoDowngraded ? " (auto-downgraded: Wi-Fi/heat)" : "") + ". Set the phone to 1080p, move closer to the router (5 GHz) or use a cable."
+    }
+    /// Ingest health hint: measured bitrate far below what this picture size normally needs.
+    var ingestHint: String? {
+        guard videoReady, height > 0, ingestKbps > 0, decodedFPS > 0 else { return nil }
+        let expected = Double(width * height) * max(24, min(60, decodedFPS)) * 0.04 / 1000    // ~4% of a bit per pixel
+        if ingestKbps < expected * 0.35 { return String(format: "Low ingest bitrate (%.1f Mbps for %dp): Wi-Fi may be congested.", ingestKbps / 1000, min(width, height)) }
+        if decodedFPS < 24 { return String(format: "Only %.0f fps arriving: check Wi-Fi / phone heat.", decodedFPS) }
+        return nil
+    }
 }
 
 struct PairingInfo {
@@ -50,6 +87,7 @@ struct StudioStats: Equatable {
     var encoder: String = "VideoToolbox H.264"
     var restarts = 0
     var recordHEVC = false
+    var targetKbps = 0
     var outputs: [OutputHealth] = []
     /// Program audio peak 0...1 for meters (0 until the backend reports it).
     var audioPeak: Float = 0
@@ -122,6 +160,12 @@ protocol StudioServices: AnyObject {
     func pacedFrame(_ m: MonitorKind, at target: Double, cursor: inout Int64?) -> (frame: MonitorFrame, id: Int64)?
     /// Commentary audio (mic, mixer, monitor). nil in the mock backend.
     var audio: AudioController? { get }
+    /// Operator rotation (0/90/180/270) and flip for a phone; rotation nil = automatic.
+    func setDeviceTransform(id: String, rotation: Int?, flip: Bool?)
+    /// "Vivid" final-pass enhancement, video bitrate preset (kbps) and HEVC local recording (applied at the next Go Live).
+    var vividLevel: VividLevel { get set }
+    var videoKbps: Int { get set }
+    var recordHEVC: Bool { get set }
     /// additive: the Core store, for integrations that persist (nil in the mock backend)
     var integrationStore: StudioStore? { get }
     func shutdown() async
@@ -141,4 +185,8 @@ extension StudioServices {
     var introPropId: String? { get { nil } set {} }
     var transitionMs: Int { get { 300 } set {} }
     var audio: AudioController? { nil }
+    func setDeviceTransform(id: String, rotation: Int?, flip: Bool?) {}
+    var vividLevel: VividLevel { get { .subtle } set {} }
+    var videoKbps: Int { get { defaultVideoKbps } set {} }
+    var recordHEVC: Bool { get { false } set {} }
 }

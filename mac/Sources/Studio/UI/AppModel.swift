@@ -32,6 +32,9 @@ final class AppModel {
     var recordOn = true
     /// Fade length for AUTO transitions (ms); forwarded to the engine.
     var transitionMs = 300 { didSet { if transitionMs != oldValue { services.transitionMs = transitionMs } } }
+    var vividLevel = VividLevel.subtle { didSet { if vividLevel != oldValue { services.vividLevel = vividLevel } } }
+    var videoKbps = defaultVideoKbps { didSet { if videoKbps != oldValue { services.videoKbps = videoKbps } } }
+    var recordHEVC = false { didSet { if recordHEVC != oldValue { services.recordHEVC = recordHEVC } } }
     var selectedDestinations: Set<String> = []
     var errorMessage: String?
     var busy = false
@@ -50,6 +53,7 @@ final class AppModel {
         abg.onRemoteStop = { [weak self] in self?.stopLive() }
         refresh()
         overlays = services.overlays
+        vividLevel = services.vividLevel; videoKbps = services.videoKbps; recordHEVC = services.recordHEVC
         transitionMs = services.transitionMs
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.refresh() }
@@ -100,6 +104,8 @@ final class AppModel {
     func delete(_ s: Scene) { Task { await services.deleteScene(id: s.id); refresh() } }
 
     // MARK: phones / outputs
+    /// rotation nil = automatic (phone-reported, else none)
+    func setTransform(_ d: DeviceInfo, rotation: Int?, flip: Bool) { services.setDeviceTransform(id: d.id, rotation: rotation, flip: flip); refresh() }
     func removeDevice(_ d: DeviceInfo) { Task { await services.deleteDevice(id: d.id); refresh() } }
     func saveDestination(_ d: Destination) { Task { await services.saveDestination(d); selectedDestinations.insert(d.id); refresh() } }
     func removeDestination(_ d: Destination) { Task { await services.deleteDestination(id: d.id); selectedDestinations.remove(d.id); refresh() } }

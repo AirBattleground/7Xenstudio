@@ -14,6 +14,7 @@ final class AudioController {
     @ObservationIgnored private var keyMonitor: Any?
     @ObservationIgnored private var resignObserver: NSObjectProtocol?
     @ObservationIgnored private var saveTask: Task<Void, Never>?
+    @ObservationIgnored private var muteStopTask: Task<Void, Never>?
     @ObservationIgnored private var micStartedFor: (uid: String?, defaultID: UInt32)?
     @ObservationIgnored private var monitorStartedFor: (uid: String?, defaultID: UInt32)?
 
@@ -23,6 +24,7 @@ final class AudioController {
             mixer.settings = settings
             scheduleSave()
             if settings.micEnabled != oldValue.micEnabled || settings.micDeviceUID != oldValue.micDeviceUID { reconcileMic(force: true) }
+            if settings.mic.mute != oldValue.mic.mute { muteChanged() }
             if settings.monitor != oldValue.monitor || settings.micDeviceUID != oldValue.micDeviceUID { reconcileMonitor(force: settings.monitor.deviceUID != oldValue.monitor.deviceUID || settings.monitor.enabled != oldValue.monitor.enabled) }
             if settings.talkMode != oldValue.talkMode { pttHeld = false; latched = false }
         }
@@ -85,6 +87,27 @@ final class AudioController {
     }
     static func openMicPrivacySettings() {
         if let u = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") { NSWorkspace.shared.open(u) }
+    }
+
+    // MARK: noise profile
+
+    /// Learns the room noise of the mic (keep quiet for 2 s) / of a phone feed; the clean-up then subtracts exactly that spectrum.
+    func learnMicNoise() { mixer.learnNoise(id: AudioMixer.micID) }
+    func clearMicNoise() { mixer.clearNoiseProfile(id: AudioMixer.micID) }
+    func learnPhoneNoise() { for id in mixer.sourceIDs where id.hasPrefix("device:") { mixer.learnNoise(id: id) } }
+    func clearPhoneNoise() { for id in mixer.sourceIDs where id.hasPrefix("device:") { mixer.clearNoiseProfile(id: id) } }
+
+    /// A muted mic already contributes exact digital silence; after 20 s of mute the capture session is released too
+    /// (no room noise processed, the system mic indicator goes out) and restarted when un-muted.
+    private func muteChanged() {
+        muteStopTask?.cancel()
+        if settings.mic.mute {
+            muteStopTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 20_000_000_000)
+                guard !Task.isCancelled, let self, self.settings.mic.mute, self.settings.micEnabled else { return }
+                self.mic.stop(); self.micStatus = .idle
+            }
+        } else if settings.micEnabled, !micStatus.isRunning { reconcileMic(force: true) }
     }
 
     // MARK: devices
@@ -177,6 +200,6 @@ final class AudioController {
         flush()
         if let k = keyMonitor { NSEvent.removeMonitor(k); keyMonitor = nil }
         if let o = resignObserver { NotificationCenter.default.removeObserver(o); resignObserver = nil }
-        mic.stop(); stopMonitor()
+        muteStopTask?.cancel(); mic.stop(); stopMonitor()
     }
 }

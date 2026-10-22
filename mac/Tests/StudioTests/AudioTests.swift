@@ -24,7 +24,7 @@ private func amplitude(_ x: [Float], _ f: Double, _ a: Int, _ b: Int) -> Float {
 private func db(_ x: Float) -> Double { 20 * log10(Double(max(x, 1e-9))) }
 private func rms(_ x: ArraySlice<Float>) -> Float { (x.reduce(0) { $0 + $1 * $1 } / Float(x.count)).squareRoot() }
 private func mixer() -> AudioMixer { AudioMixer(jitterTargetMs: 0) }
-private func fresh() -> AudioSettings { var s = AudioSettings(); s.phoneLatencyMs = 0; return s }      // phone picture-latency compensation off
+private func fresh() -> AudioSettings { var s = AudioSettings(); s.phoneLatencyMs = 0; s.voice.denoiseOn = false; return s }   // denoiser off: these tests feed steady tones, which a noise suppressor rightly treats as noise      // phone picture-latency compensation off
 private func s0() -> AudioSettings { var s = fresh(); s.duck.enabled = false; return s }
 
 // MARK: gain / mute / math
@@ -240,14 +240,15 @@ private func s0() -> AudioSettings { var s = fresh(); s.duck.enabled = false; re
     @Test func micAndPhoneDelaysAlign() {
         // an impulse in both sources: the mic is delayed by 100 ms, the phone by 0 -> they land 4800 frames apart
         let m = mixer(); m.addSource(id: "device:g", active: true)
-        var s = fresh(); s.duck.enabled = false; s.voice = { var v = VoiceChainSettings(); v.hpfOn = false; v.gateOn = false; v.compOn = false; v.limiterOn = false; return v }()
+        var s = fresh(); s.duck.enabled = false; s.voice = { var v = VoiceChainSettings(); v.hpfOn = false; v.denoiseOn = false; v.gateOn = false; v.compOn = false; v.limiterOn = false; return v }()
         s.mic.delayMs = 100; m.settings = s
         var imp = [Float](repeating: 0, count: 48_000); imp[20_000] = 0.5
         var gimp = [Float](repeating: 0, count: 48_000); gimp[20_000] = -0.5
         m.push(id: AudioMixer.micID, left: imp); m.push(id: "device:g", left: gimp)
         let o = m.renderOffline(frames: 48_000).l
-        #expect(abs(o[20_000] + 0.5) < 0.01)
-        #expect(abs(o[24_800] - 0.5) < 0.02, "mic impulse at +100 ms: \(o[24_800])")
+        let lh = LookaheadLimiter.lookahead - 1          // master limiter look-ahead delays both equally
+        #expect(abs(o[20_000 + lh] + 0.5) < 0.01)
+        #expect(abs(o[24_800 + lh] - 0.5) < 0.02, "mic impulse at +100 ms: \(o[24_800 + lh])")
     }
     @Test func sidetoneAndMonitorBus() {
         let m = mixer(); m.addSource(id: "device:g", active: true)
@@ -494,7 +495,7 @@ private func runTool(_ path: String, _ args: [String]) -> String {
         m.push(id: "device:p", left: imp)
         let o = m.renderOffline(frames: 48_000).l
         let at = o.firstIndex { abs($0) > 0.2 } ?? -1
-        #expect(at == 10_000 + AudioMath.msToFrames(300), "phone impulse landed at \(at)")
+        #expect(at == 10_000 + AudioMath.msToFrames(300) + LookaheadLimiter.lookahead - 1, "phone impulse landed at \(at)")   // + master limiter look-ahead
     }
 
     @Test func readerDecodesAnyInputTo48kStereo() async throws {

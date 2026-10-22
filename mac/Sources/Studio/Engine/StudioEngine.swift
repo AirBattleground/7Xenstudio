@@ -39,6 +39,11 @@ final class StudioEngine {
         s.gpuAvgMs = gpuWin.mean(); s.gpuP99Ms = gpuWin.percentile(0.99); s.encodeP99Ms = encWin.percentile(0.99)
         return s
     }
+    /// "Vivid" final-pass enhancement (also drives the monitors). Applied immediately.
+    var vivid: VividLevel { get { lock.withLock { _vivid } } set { lock.withLock { _vivid = newValue; comp?.vivid = newValue } } }
+    /// Per-source rotation / flip.
+    func setTransforms(_ t: [SourceRef: SourceTransform]) { lock.withLock { _transforms = t; comp?.setTransforms(t) } }
+    private var _vivid = VividLevel.off, _transforms: [SourceRef: SourceTransform] = [:]
     private(set) var targetFPS = 60.0
     var isRunning: Bool { clock != nil }
 
@@ -63,6 +68,7 @@ final class StudioEngine {
         stop()
         guard let c = MetalCompositor() else { NSLog("StudioEngine: no Metal device"); return false }
         c.provider = provider
+        lock.withLock { c.vivid = _vivid; c.setTransforms(_transforms) }
         c.overlayImages.propResolver = lock.withLock { propResolver }
         comp = c; self.sink = sink; targetFPS = fps; lastSubmittedPts = .invalid
         lock.withLock { _stats = EngineStats(); fpsCount = 0; fpsStamp = 0; tickCount = 0 }

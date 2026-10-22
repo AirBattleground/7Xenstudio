@@ -15,6 +15,8 @@ struct SourceMetrics {
     var decodeMsAvg = 0.0         // VideoToolbox submit -> output, per frame
     var decodeMsMax = 0.0
     var droppedFrames = 0         // access units skipped because decode fell behind (resumes at the next IDR)
+    var width = 0, height = 0     // decoded picture size (what the phone really sends)
+    var ingestKbps = 0.0          // incoming video bitrate measured on the stream copied out of MediaMTX
 }
 
 /// Phone video: a child ffmpeg reads the phone's RTMP stream from MediaMTX over loopback and remuxes it to raw Annex-B H.264
@@ -49,6 +51,7 @@ final class PhoneSource: FrameSource, @unchecked Sendable {
     private var fpsCount = 0, fpsStart = CACurrentMediaTime(), lastFrameAt = 0.0, stallOpen = false, lastLatencyAt = 0.0
     private var dataAt = 0.0           // last time ffmpeg delivered bytes
     private var progressAt = 0.0       // last decoded frame (or process start): a connected-but-useless ffmpeg is restarted
+    private var rateBytes = 0, rateStart = CACurrentMediaTime()
     private var runDecoded = 0         // frames decoded in the current ffmpeg run
     private(set) var ffmpegStarts = 0
 
@@ -67,6 +70,7 @@ final class PhoneSource: FrameSource, @unchecked Sendable {
         let now = CACurrentMediaTime()
         out.playing = lastFrameAt > 0 && now - lastFrameAt < 1.0
         if now - fpsStart >= 1.5 { out.decodedFPS = 0 }
+        if !out.playing { out.ingestKbps = 0 }
         return out
     }
     var isStopped: Bool { lock.lock(); defer { lock.unlock() }; return stopped }
@@ -126,7 +130,9 @@ final class PhoneSource: FrameSource, @unchecked Sendable {
             let n = read(fd, buf, 1 << 18)
             if n <= 0 { if n < 0 && errno == EINTR { continue }; break }
             let now = CACurrentMediaTime()
-            lock.lock(); dataAt = now; lock.unlock()
+            lock.lock(); dataAt = now; rateBytes += n
+            if now - rateStart >= 2 { let k = Double(rateBytes) * 8 / 1000 / (now - rateStart); m.ingestKbps = m.ingestKbps == 0 ? k : m.ingestKbps * 0.5 + k * 0.5; rateBytes = 0; rateStart = now }
+            lock.unlock()
             if dbgOn { NSLog("PhoneSource read n=%ld t=%.3f", n, now); dbgBytes += n; if now - dbgT >= 2 { NSLog("PhoneSource rd: %.2f MB/s busy=%.0f%%", Double(dbgBytes) / (now - dbgT) / 1e6, dbgBusy / (now - dbgT) * 100); dbgBytes = 0; dbgBusy = 0; dbgT = now } }
             defer { if dbgOn { dbgBusy += CACurrentMediaTime() - now } }
             for nal in parser.feed(UnsafeBufferPointer(start: buf, count: n), at: now) {
@@ -155,6 +161,7 @@ final class PhoneSource: FrameSource, @unchecked Sendable {
             }
         }
         lastArrival = arrival; progressAt = now; runDecoded += 1
+        m.width = CVPixelBufferGetWidth(pb); m.height = CVPixelBufferGetHeight(pb)
         let maxDelay = min(Self.maxDelayCap, Self.baseMaxDelay + max(0, 4 * jitter - 0.02))
         var due = lastDue + interval
         due = min(max(due, arrival + Self.minDelay), arrival + maxDelay)

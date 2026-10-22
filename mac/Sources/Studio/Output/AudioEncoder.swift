@@ -2,15 +2,16 @@ import Foundation
 import AVFoundation
 import CoreMedia
 
-/// PCM CMSampleBuffers -> AAC-LC 48 kHz stereo 160 kbps, emitted as ADTS frames with 90 kHz PTS.
+/// PCM CMSampleBuffers -> AAC-LC 48 kHz stereo 192 kbps, emitted as ADTS frames with 90 kHz PTS.
 /// Not thread-safe: drive from one serial queue.
 final class AudioEncoder {
     static let sampleRate = 48000.0
+    static let bitRate = 192_000
     var onFrame: ((Data, UInt64) -> Void)?   // adts, pts90k (relative seconds already offset by caller)
     private var converter: AVAudioConverter?
     private var inFormat: AVAudioFormat?
     private let outFormat = AVAudioFormat(settings: [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 48000.0,
-                                                     AVNumberOfChannelsKey: 2, AVEncoderBitRateKey: 160_000])!
+                                                     AVNumberOfChannelsKey: 2, AVEncoderBitRateKey: 192_000])!
     private var pending: [AVAudioPCMBuffer] = []
     private var outPTS: Double? = nil        // seconds for the next AAC packet
     private var expectedIn: Double? = nil    // where the next input buffer should start
@@ -32,7 +33,7 @@ final class AudioEncoder {
     func feed(_ buf: AVAudioPCMBuffer, pts: Double) {
         if converter == nil || inFormat != buf.format {
             converter = AVAudioConverter(from: buf.format, to: outFormat)
-            converter?.bitRate = 160_000
+            converter?.bitRate = 192_000
             inFormat = buf.format; pending = []
         }
         let dur = Double(buf.frameLength) / buf.format.sampleRate

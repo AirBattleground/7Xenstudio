@@ -23,12 +23,44 @@ struct BatteryGlyph: View {
     }
 }
 
+/// Rotate / flip a phone's picture in the compositor (persisted per phone).
+struct RotateMenu: View {
+    @Environment(AppModel.self) var model
+    let d: DeviceInfo
+    var body: some View {
+        Menu {
+            Button { model.setTransform(d, rotation: nil, flip: d.flip) } label: { Label("Automatic" + (d.rotationAuto ? " ✓" : ""), systemImage: "wand.and.stars") }
+            ForEach([0, 90, 180, 270], id: \.self) { deg in
+                Button { model.setTransform(d, rotation: deg, flip: d.flip) } label: { Label("\(deg)°" + (!d.rotationAuto && d.rotation == deg ? " ✓" : ""), systemImage: "rotate.right") }
+            }
+            Divider()
+            Button { model.setTransform(d, rotation: d.rotationAuto ? nil : d.rotation, flip: !d.flip) } label: { Label("Flip horizontally" + (d.flip ? " ✓" : ""), systemImage: "arrow.left.and.right.righttriangle.left.righttriangle.right") }
+        } label: { Label("Rotate" + (d.rotation != 0 || d.flip ? " (\(d.rotation)°\(d.flip ? " flip" : ""))" : ""), systemImage: "rotate.right") }
+    }
+}
+
+/// Amber chip shown when a phone sends low-quality video.
+struct QualityWarningChip: View {
+    let text: String
+    var body: some View {
+        HStack(alignment: .top, spacing: 5) {
+            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 10))
+            Text(text).font(.system(size: 10)).fixedSize(horizontal: false, vertical: true)
+        }
+        .foregroundStyle(Theme.warn).padding(.horizontal, 7).padding(.vertical, 4)
+        .background(Theme.warn.opacity(0.12), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Theme.warn.opacity(0.45)))
+        .accessibilityLabel("Warning: \(text)")
+    }
+}
+
 struct PhoneRow: View {
     @Environment(AppModel.self) var model
     let d: DeviceInfo
     @State private var hover = false
     var state: (String, Color, Int) { d.videoReady ? ("LIVE", Theme.ok, 3) : d.online ? ("ONLINE", Theme.warn, 2) : ("OFFLINE", Theme.faint, 0) }
     var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
         HStack(spacing: 10) {
             ZStack {
                 RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Theme.well)
@@ -42,7 +74,11 @@ struct PhoneRow: View {
                 }
                 HStack(spacing: 8) {
                     Text(state.0).font(Theme.Font.label).tracking(0.6).foregroundStyle(state.1).fixedSize()
-                    if d.videoReady { Text("\(Int(defaultFPS)) fps").font(Theme.Font.mono(10)).foregroundStyle(Theme.muted).fixedSize() }
+                    if d.videoReady {
+                        Text(d.qualityLabel.map { q in d.decodedFPS > 0 ? q + String(format: " · %.0f fps", d.decodedFPS) : q } ?? "\(Int(defaultFPS)) fps")
+                            .font(Theme.Font.mono(10)).foregroundStyle(d.lowQuality ? Theme.warn : Theme.muted).fixedSize()
+                        if d.rotation != 0 || d.flip { Text("↻\(d.rotation)°").font(Theme.Font.mono(10)).foregroundStyle(Theme.muted).fixedSize() }
+                    }
                     if !d.videoReady, let m = d.model { Text(m).font(Theme.Font.caption).foregroundStyle(Theme.faint).lineLimit(1) }
                 }
             }
@@ -52,10 +88,17 @@ struct PhoneRow: View {
                 if let b = d.battery { BatteryGlyph(percent: b) }
             }
         }
+            if let w = d.qualityWarning { QualityWarningChip(text: w) }
+            else if let h = d.ingestHint { QualityWarningChip(text: h) }
+        }
         .padding(8)
         .background(Color.white.opacity(hover ? 0.06 : 0.03), in: RoundedRectangle(cornerRadius: Theme.Radius.m, style: .continuous))
         .onHover { hover = $0 }
-        .contextMenu { Button("Remove phone", role: .destructive) { model.removeDevice(d) } }
+        .contextMenu {
+            RotateMenu(d: d)
+            Divider()
+            Button("Remove phone", role: .destructive) { model.removeDevice(d) }
+        }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(d.name), \(state.0.lowercased())")
     }
@@ -82,6 +125,7 @@ struct OutputsPanel: View {
         @Bindable var m = model
         Panel(title: "Outputs", icon: "dot.radiowaves.left.and.right") {
             Toggle(isOn: $m.recordOn) { Label("Record on this Mac", systemImage: "record.circle").fontWeight(.semibold) }.disabled(model.isLive)
+            VideoQualityControls().disabled(model.isLive)
             Divider().overlay(Theme.stroke)
             SectionHeader(text: "Destinations")
             if model.destinations.isEmpty { Text("No stream keys yet.").font(Theme.Font.caption).foregroundStyle(Theme.muted) }
@@ -122,6 +166,25 @@ struct OutputHealthPanel: View {
                 if let f = s.recordingFile { HStack { StatusDot(color: Theme.program, pulse: true); Text("Recording").font(Theme.Font.body); Spacer(); Text(f).font(Theme.Font.mono(10)).foregroundStyle(Theme.muted).lineLimit(1) } }
             }
             if let e = s.error { Pill(text: e, color: Theme.program) }
+        }
+    }
+}
+
+/// Bitrate presets + recording codec (shared by the Outputs panel and Settings).
+struct VideoQualityControls: View {
+    @Environment(AppModel.self) var model
+    var body: some View {
+        @Bindable var m = model
+        VStack(alignment: .leading, spacing: 6) {
+            Picker("Video bitrate", selection: $m.videoKbps) {
+                ForEach(videoBitratePresets, id: \.kbps) { Text($0.name).tag($0.kbps) }
+                if !videoBitratePresets.contains(where: { $0.kbps == model.videoKbps }) { Text("\(model.videoKbps / 1000) Mbps").tag(model.videoKbps) }
+            }
+            Picker("Recording quality", selection: $m.recordHEVC) {
+                Text("H.264 High").tag(false)
+                Text("HEVC High (cleaner, same bitrate)").tag(true)
+            }
+            Text("Live streams are always H.264 High 1080p60 (YouTube). HEVC only changes the recording on this Mac.").font(Theme.Font.caption).foregroundStyle(Theme.muted)
         }
     }
 }

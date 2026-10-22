@@ -239,6 +239,7 @@ struct AudioMixerContent: View {
                         SyncPanel(audio: audio)
                         DuckPanel(audio: audio)
                         VoicePanel(audio: audio)
+                        CleanupPanel(audio: audio)
                         HeadphonesPanel(audio: audio)
                     }.frame(width: 340)
                 }
@@ -386,6 +387,19 @@ struct VoicePanel: View {
             }
         }) {
             Toggle("High-pass 80 Hz", isOn: Binding(get: { v.hpfOn }, set: { audio.settings.voice.hpfOn = $0 }))
+            Toggle("Voice clean-up (noise reduction)", isOn: Binding(get: { v.denoiseOn }, set: { audio.settings.voice.denoiseOn = $0 }))
+            Group {
+                LabeledSlider(label: "Clean-up strength", value: Binding(get: { v.denoiseStrength * 100 }, set: { audio.settings.voice.denoiseStrength = $0 / 100 }), range: 0...100, step: 5, unit: "%")
+                TimelineView(.animation(minimumInterval: 1.0 / 5)) { _ in
+                    let m = audio.meters()
+                    HStack(spacing: 8) {
+                        Button(m.micLearning ? "Listening..." : "Learn room noise") { audio.learnMicNoise() }.buttonStyle(.studio(.secondary, height: 24)).disabled(m.micLearning)
+                        if m.micProfile { Button("Forget") { audio.clearMicNoise() }.buttonStyle(.studio(.ghost, height: 24)) }
+                        Spacer(minLength: 0)
+                        Text(m.micProfile ? "Profile learned" : "Adaptive").font(Theme.Font.caption).foregroundStyle(Theme.muted)
+                    }
+                }
+            }.disabled(!v.denoiseOn).opacity(v.denoiseOn ? 1 : 0.4)
             Toggle("Noise gate", isOn: Binding(get: { v.gateOn }, set: { audio.settings.voice.gateOn = $0 }))
             LabeledSlider(label: "Gate threshold", value: Binding(get: { v.gateThresholdDb }, set: { audio.settings.voice.gateThresholdDb = $0 }), range: -70...(-15), step: 1, unit: "dB")
                 .disabled(!v.gateOn).opacity(v.gateOn ? 1 : 0.4)
@@ -396,6 +410,29 @@ struct VoicePanel: View {
                 LabeledSlider(label: "Makeup", value: Binding(get: { v.compMakeupDb }, set: { audio.settings.voice.compMakeupDb = $0 }), range: 0...12, step: 0.5, unit: "dB", format: "%.1f")
             }.disabled(!v.compOn).opacity(v.compOn ? 1 : 0.4)
             Toggle("Limiter (-1 dBFS)", isOn: Binding(get: { v.limiterOn }, set: { audio.settings.voice.limiterOn = $0 }))
+        }
+    }
+}
+
+struct CleanupPanel: View {
+    let audio: AudioController
+    var body: some View {
+        let st = audio.settings
+        Panel(title: "Phone audio clean-up", icon: "sparkles") {
+            Toggle("Reduce hiss and noise on phone audio", isOn: Binding(get: { st.phoneDenoiseOn }, set: { audio.settings.phoneDenoiseOn = $0 }))
+            Group {
+                LabeledSlider(label: "Strength", value: Binding(get: { st.phoneDenoiseStrength * 100 }, set: { audio.settings.phoneDenoiseStrength = $0 / 100 }), range: 0...100, step: 5, unit: "%")
+                HStack(spacing: 8) {
+                    Button("Learn phone noise") { audio.learnPhoneNoise() }.buttonStyle(.studio(.secondary, height: 24))
+                    Button("Forget") { audio.clearPhoneNoise() }.buttonStyle(.studio(.ghost, height: 24))
+                    Spacer(minLength: 0)
+                }
+                Text("Learn while the game is silent (menu, pause). Off by default: it can dull music.").font(Theme.Font.caption).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
+            }.disabled(!st.phoneDenoiseOn).opacity(st.phoneDenoiseOn ? 1 : 0.4)
+            Toggle("Gentle gate on quiet phone audio", isOn: Binding(get: { st.phoneGateOn }, set: { audio.settings.phoneGateOn = $0 }))
+            LabeledSlider(label: "Gate threshold", value: Binding(get: { st.phoneGateThresholdDb }, set: { audio.settings.phoneGateThresholdDb = $0 }), range: -80...(-35), step: 1, unit: "dB")
+                .disabled(!st.phoneGateOn).opacity(st.phoneGateOn ? 1 : 0.4)
+            Toggle("Master rumble filter (80 Hz)", isOn: Binding(get: { st.masterHpfOn }, set: { audio.settings.masterHpfOn = $0 }))
         }
     }
 }
@@ -505,7 +542,7 @@ struct HMeter: View {
 struct AudioAlertsCompact: View {
     let audio: AudioController
     var body: some View {
-        if audio.settings.micEnabled, !audio.micStatus.isRunning {
+        if audio.settings.micEnabled, !audio.settings.mic.mute, !audio.micStatus.isRunning {
             Pill(text: audio.micStatus == .denied ? "Mic access blocked" : "Mic not capturing", color: Theme.warn, icon: "exclamationmark.triangle.fill")
         }
         if audio.feedbackWarning != nil { Pill(text: "Feedback risk: use headphones", color: Theme.warn, icon: "exclamationmark.triangle.fill") }

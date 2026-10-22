@@ -19,7 +19,9 @@ import CoreVideo
         let fh = pipe.fileHandleForReading
         let out = OutputPipeline(); out.onLog = { print("HDBENCH log:", $0) }
         var cfg = OutputConfig(ffmpegPath: ff); cfg.recordingURL = URL(fileURLWithPath: outPath); cfg.videoKbps = kbps; cfg.recordHEVC = env["STUDIO_HDBENCH_HEVC"] != nil
+        if let r = env["STUDIO_HDBENCH_RTMP"] { cfg.destinations = [Destination(id: "t", name: "local", kind: .custom, url: r, key: "testkey")] }
         try out.start(cfg)
+        try await Task.sleep(nanoseconds: 1_500_000_000)   // let ffmpeg come up so no leading frame is dropped (keeps frame N == reference N)
         var pbs: [CVPixelBuffer] = []
         for _ in 0..<12 {
             var pb: CVPixelBuffer?

@@ -21,21 +21,25 @@ enum TalkMode: String, Codable, CaseIterable { case open, pushToTalk }
 
 struct VoiceChainSettings: Codable, Hashable {
     var hpfOn = true, hpfHz = 80.0
-    var gateOn = true, gateThresholdDb = -45.0, gateReductionDb = 40.0, gateHoldMs = 150.0
+    var gateOn = true, gateThresholdDb = -45.0, gateReductionDb = 60.0, gateHoldMs = 150.0
     var compOn = true, compThresholdDb = -18.0, compRatio = 3.0, compMakeupDb = 3.0
     var limiterOn = true, limiterCeilingDb = -1.0
+    /// "Voice clean-up": spectral noise suppression (fans, hiss, room tone) ahead of the gate; strength 0...1.
+    var denoiseOn = true, denoiseStrength = 0.6
     init() {}
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: K.self)
         func v<T: Decodable>(_ k: K, _ def: T) -> T { ((try? c.decodeIfPresent(T.self, forKey: k)) ?? nil) ?? def }
+        denoiseOn = v(.denoiseOn, denoiseOn); denoiseStrength = v(.denoiseStrength, denoiseStrength)
         hpfOn = v(.hpfOn, hpfOn); hpfHz = v(.hpfHz, hpfHz)
         gateOn = v(.gateOn, gateOn); gateThresholdDb = v(.gateThresholdDb, gateThresholdDb)
         gateReductionDb = v(.gateReductionDb, gateReductionDb); gateHoldMs = v(.gateHoldMs, gateHoldMs)
         compOn = v(.compOn, compOn); compThresholdDb = v(.compThresholdDb, compThresholdDb)
         compRatio = v(.compRatio, compRatio); compMakeupDb = v(.compMakeupDb, compMakeupDb)
         limiterOn = v(.limiterOn, limiterOn); limiterCeilingDb = v(.limiterCeilingDb, limiterCeilingDb)
+        if gateReductionDb == 40 { gateReductionDb = 60 }     // the old default let room noise through only 40 dB down
     }
-    private enum K: String, CodingKey { case hpfOn, hpfHz, gateOn, gateThresholdDb, gateReductionDb, gateHoldMs, compOn, compThresholdDb, compRatio, compMakeupDb, limiterOn, limiterCeilingDb }
+    private enum K: String, CodingKey { case denoiseOn, denoiseStrength, hpfOn, hpfHz, gateOn, gateThresholdDb, gateReductionDb, gateHoldMs, compOn, compThresholdDb, compRatio, compMakeupDb, limiterOn, limiterCeilingDb }
 }
 
 struct DuckSettings: Codable, Hashable {
@@ -89,17 +93,25 @@ struct AudioSettings: Codable, Hashable {
     var micEnabled = true
     var micDeviceUID: String? = nil                  // nil = system default input
     var monitor = MonitorSettings()
+    /// Phone (game) audio clean-up, off by default: noise suppression and a gentle downward expander for hissy phone feeds.
+    var phoneDenoiseOn = false, phoneDenoiseStrength = 0.4
+    var phoneGateOn = false, phoneGateThresholdDb = -60.0
+    /// Optional 80 Hz rumble filter on the master bus.
+    var masterHpfOn = false, masterHpfHz = 80.0
     init() {}
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: K.self)
         func v<T: Decodable>(_ k: K, _ def: T) -> T { ((try? c.decodeIfPresent(T.self, forKey: k)) ?? nil) ?? def }
+        phoneDenoiseOn = v(.phoneDenoiseOn, phoneDenoiseOn); phoneDenoiseStrength = v(.phoneDenoiseStrength, phoneDenoiseStrength)
+        phoneGateOn = v(.phoneGateOn, phoneGateOn); phoneGateThresholdDb = v(.phoneGateThresholdDb, phoneGateThresholdDb)
+        masterHpfOn = v(.masterHpfOn, masterHpfOn); masterHpfHz = v(.masterHpfHz, masterHpfHz)
         mic = v(.mic, mic); phoneDefault = v(.phoneDefault, phoneDefault); phones = v(.phones, phones)
         masterDb = v(.masterDb, masterDb); masterMute = v(.masterMute, masterMute); phoneLatencyMs = min(2000, max(0, v(.phoneLatencyMs, phoneLatencyMs)))
         if phoneLatencyMs == 1000 { phoneLatencyMs = AudioSettings.defaultPhoneLatencyMs }   // old HLS-era default
         voice = v(.voice, voice); duck = v(.duck, duck); talkMode = v(.talkMode, talkMode)
         micEnabled = v(.micEnabled, micEnabled); micDeviceUID = v(.micDeviceUID, micDeviceUID); monitor = v(.monitor, monitor)
     }
-    private enum K: String, CodingKey { case mic, phoneDefault, phones, masterDb, masterMute, phoneLatencyMs, voice, duck, talkMode, micEnabled, micDeviceUID, monitor }
+    private enum K: String, CodingKey { case mic, phoneDefault, phones, masterDb, masterMute, phoneLatencyMs, voice, duck, talkMode, micEnabled, micDeviceUID, monitor, phoneDenoiseOn, phoneDenoiseStrength, phoneGateOn, phoneGateThresholdDb, masterHpfOn, masterHpfHz }
 
     func channel(_ id: String) -> ChannelSettings {
         id == AudioMixer.micID ? mic : (phones[id] ?? phoneDefault)

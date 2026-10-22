@@ -196,6 +196,23 @@ func renderSync(_ c: MetalCompositor, _ req: FrameRequest) -> CVPixelBuffer {
 }
 
 @Suite(.serialized) struct EngineTests {
+    /// GPU cost of the upscale path + Vivid pass: three 854x480 phones in the trio (every tile upscaled), then a full-frame 480p. STUDIO_UPSCALE_MODE=0 / STUDIO_VIVID=0 reproduce the old path.
+    @Test func upscaleBenchmark() throws {
+        guard MTLCreateSystemDefaultDevice() != nil else { return }
+        let prov = FakeProvider()
+        let refs: [SourceRef] = (0..<3).map { .device(id: "p\($0)") }
+        for r in refs { prov.sources[r] = FakeSource(r, makeNV12(854, 480, y: 100, cb: 120, cr: 140)) }
+        let sink = CountingSink(); let eng = StudioEngine()
+        eng.vivid = VividLevel(rawValue: Int(ProcessInfo.processInfo.environment["STUDIO_VIVID"] ?? "") ?? 1) ?? .subtle
+        #expect(eng.start(fps: 60, sink: sink, provider: prov))
+        eng.setProgram(Scene(id: "t", name: "trio", layout: .trio, slots: refs), fade: false)
+        Thread.sleep(forTimeInterval: 2)
+        eng.setProgram(Scene(id: "f", name: "full", layout: .full, slots: [refs[0]]), fade: false)
+        Thread.sleep(forTimeInterval: 2)
+        eng.stop(); let s = eng.stats
+        print(String(format: "ENGINE BENCH480 fps=%.2f missed=%d held=%d frame p50=%.2fms p99=%.2fms gpu avg=%.2fms p99=%.2fms", s.fps, s.missedDeadlines, s.heldFrames, s.frameP50Ms, s.frameP99Ms, s.gpuAvgMs, s.gpuP99Ms))
+    }
+
     @Test func endToEndCFRAndBenchmark() throws {
         guard MTLCreateSystemDefaultDevice() != nil else { return }
         let prov = FakeProvider()

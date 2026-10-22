@@ -21,7 +21,16 @@ struct SettingsView: View {
                         Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(model.lanURL, forType: .string) } label: { Image(systemName: "doc.on.doc") }.buttonStyle(.borderless) }
                 }
                 LabeledContent("Encoder", value: model.stats.encoder)
-                LabeledContent("Output", value: "\(studioWidth)×\(studioHeight) @ \(defaultFPS) fps, \(defaultVideoKbps / 1000) Mbps")
+                LabeledContent("Output", value: "\(studioWidth)×\(studioHeight) @ \(defaultFPS) fps, \(model.videoKbps / 1000) Mbps, BT.709")
+            }
+            Section("Video quality") {
+                VideoQualityControls()
+                Picker("Vivid enhancement", selection: $m.vividLevel) { ForEach(VividLevel.allCases, id: \.self) { Text($0.label).tag($0) } }
+                Text("Mild saturation, contrast and edge sharpening on the final picture. Useful for flat-looking screen captures; the monitors show it live.")
+                    .font(.caption).foregroundStyle(.secondary)
+                let services = model.services
+                MonitorSurface(provider: { services.frame(.program) }, serial: { services.frameSerial(.program) }, fps: 15)
+                    .aspectRatio(16.0 / 9.0, contentMode: .fit).frame(maxWidth: 360).clipShape(RoundedRectangle(cornerRadius: 6))
             }
             Section("Slate") {
                 TextField("Starting soon", text: Binding(get: { model.slateText }, set: { model.setSlateText($0) }))

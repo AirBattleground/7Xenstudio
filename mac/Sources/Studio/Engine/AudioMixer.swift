@@ -15,6 +15,8 @@ struct MixerMeters {
     var duckDb: Float = 0               // current game-audio reduction (<= 0)
     var compReductionDb: Float = 0
     var micLive = true
+    var micDenoiseDb: Float = 0         // average noise suppression of the voice clean-up (dB, >= 0)
+    var micLearning = false, micProfile = false
 }
 
 final class AudioInput {
@@ -30,8 +32,11 @@ final class AudioInput {
     fileprivate let cap = 192_000
     fileprivate var l: [Float], r: [Float]
     fileprivate var rd = 0, count = 0
-    fileprivate var frac = 0.0
     fileprivate var primed = false, fadeIn = 0
+    fileprivate var holdL: Float = 0, holdR: Float = 0              // last emitted sample: underrun concealment fades it out
+    fileprivate var concealLeft = 0
+    fileprivate var frac = 0.0, ratio = 1.0, errSmooth = 0.0       // drift servo: fractional read position, read speed, smoothed ring-level error
+    fileprivate static let concealLen = 96
     fileprivate let lock = OSAllocatedUnfairLock()
     fileprivate var converter: AVAudioConverter?
     fileprivate var converterFormat: AVAudioFormat?
@@ -43,6 +48,7 @@ final class AudioInput {
     // render-thread state
     var hp = HighPass(), speech = SpeechDetector(), gate = NoiseGate(), comp = Compressor(), lim = Limiter()
     var delay = DelayLine(), ctlDelay = MonoDelay()
+    var denoise: SpectralDenoiser?
     var faderGain: Float = -1, talkGain: Float = 0
     var meter = MeterState()
 
@@ -56,7 +62,7 @@ final class AudioInput {
 
     fileprivate func write(_ pl: UnsafePointer<Float>, _ pr: UnsafePointer<Float>, _ n: Int) {
         lock.withLock {
-            if n >= cap { rd = 0; count = 0; frac = 0 }
+            if n >= cap { rd = 0; count = 0 }
             // a source that bursts (stream start, stalled network catching up) must not leave seconds of latency behind:
             // beyond 5x the jitter target keep only the newest 2x
             var drop = max(0, count + n - cap)
@@ -69,41 +75,91 @@ final class AudioInput {
         }
     }
 
-    /// Pulls n frames. With a jitter target the read speed is servo'd by +-1 % (linear interpolation) so the ring level
-    /// stays near the target and slow clock drift never turns into overflow clicks or underrun gaps.
+    /// Pulls n frames. The ring is read at exactly 1.0x while its level stays within +-15 % of the target (bit-exact passthrough);
+    /// only beyond that does the read speed trim, proportionally to the (slowly smoothed, 0.5 s) excess and capped at +-0.5 %,
+    /// using a 32-tap Kaiser-windowed-sinc fractional-delay interpolator (see `Sinc`). The previous servo changed its speed
+    /// continuously by up to +-1 % with LINEAR interpolation: every tone picked up distortion (THD+N about -41 dB, high frequencies
+    /// dulled) and bursty arrivals frequency-modulated the whole signal. An underrun fades the last sample out over 96 frames
+    /// instead of cutting to zero, then re-primes with a fade-in.
     fileprivate func pull(_ ol: UnsafeMutablePointer<Float>, _ or: UnsafeMutablePointer<Float>, _ n: Int) {
         lock.withLock {
             var i = 0
-            if jitterTarget > 0, !primed {
-                if count >= jitterTarget { primed = true; fadeIn = 96; primes += 1 } else {
-                    for k in 0..<n { ol[k] = 0; or[k] = 0 }
-                    return
+            func tail(from k0: Int) {
+                for k in k0..<n {
+                    if concealLeft > 0 {
+                        let g = Float(concealLeft) / Float(AudioInput.concealLen); let w = g * g * (3 - 2 * g)
+                        ol[k] = holdL * w; or[k] = holdR * w; concealLeft -= 1
+                    } else { ol[k] = 0; or[k] = 0 }
                 }
             }
-            var ratio = 1.0
-            if jitterTarget > 0 { ratio = 1 + max(-0.01, min(0.01, Double(count - jitterTarget) / Double(jitterTarget) * 0.02)); servoPpm = Int((ratio - 1) * 1e6) }
+            if jitterTarget > 0, !primed {
+                if count >= jitterTarget { primed = true; fadeIn = 96; primes += 1; concealLeft = 0; frac = 0; ratio = 1; errSmooth = 0 } else { tail(from: 0); return }
+            }
+            if jitterTarget > 0 {
+                errSmooth += (Double(count - jitterTarget) - errSmooth) * (1 - exp(-Double(n) / AudioMixer.sampleRate / 0.5))
+                let band = Double(jitterTarget) * 0.15
+                let excess = errSmooth > band ? errSmooth - band : (errSmooth < -band ? errSmooth + band : 0)
+                ratio = 1 + max(-0.005, min(0.005, 0.01 * excess / Double(jitterTarget)))
+                servoPpm = Int((ratio - 1) * 1e6)
+            }
             while i < n {
-                let need = frac > 0 ? 2 : 1
+                let exact = frac == 0 && ratio == 1
+                let need = exact ? 1 : Sinc.taps / 2 + 1
                 if count < need {
-                    for k in i..<n { ol[k] = 0; or[k] = 0 }
-                    if jitterTarget > 0 { primed = false; frac = 0; underruns += 1 }
+                    if jitterTarget > 0 { primed = false; frac = 0; underruns += 1; concealLeft = AudioInput.concealLen }
+                    tail(from: i)
                     return
                 }
                 var a = l[rd], b = r[rd]
-                if frac > 0 {
-                    let n1 = (rd + 1) % cap, f = Float(frac)
-                    a += (l[n1] - a) * f; b += (r[n1] - b) * f
-                }
+                if !exact { (a, b) = Sinc.interpolate(l, r, cap, rd, frac) }
                 if fadeIn > 0 { let g = Float(96 - fadeIn + 1) / 96; a *= g; b *= g; fadeIn -= 1 }
-                ol[i] = a; or[i] = b
+                ol[i] = a; or[i] = b; holdL = a; holdR = b
                 frac += ratio
-                while frac >= 1 { frac -= 1; rd += 1; if rd == cap { rd = 0 }; count -= 1; if count == 0 { break } }
-                if count == 0 { frac = 0 }
+                while frac >= 1 { frac -= 1; rd += 1; if rd == cap { rd = 0 }; count -= 1 }
                 i += 1
             }
         }
     }
-    fileprivate func flush() { lock.withLock { rd = 0; count = 0; frac = 0; primed = false } }
+    fileprivate func flush() { lock.withLock { rd = 0; count = 0; primed = false; frac = 0; ratio = 1; errSmooth = 0; concealLeft = 0 } }
+}
+
+/// 32-tap Kaiser (beta 9) windowed-sinc fractional-delay interpolator, 128 phases with linear interpolation between phases
+/// (error below -100 dB); flat to about 0.9 x Nyquist, exact (a pure delta) at frac = 0.
+enum Sinc {
+    static let taps = 32, phases = 128
+    static let table: [Float] = {
+        func i0(_ x: Double) -> Double { var s = 1.0, t = 1.0; for k in 1..<40 { t *= (x / 2 / Double(k)) * (x / 2 / Double(k)); s += t }; return s }
+        let beta = 9.0, norm = i0(beta), half = Double(taps / 2)
+        var t = [Float](repeating: 0, count: (phases + 1) * taps)
+        for p in 0...phases {
+            let f = Double(p) / Double(phases)
+            var sum = 0.0, row = [Double](repeating: 0, count: taps)
+            for k in 0..<taps {
+                let x = Double(k - (taps / 2 - 1)) - f                     // tap k reads sample rd + k - 15
+                let sinc = abs(x) < 1e-12 ? 1 : sin(Double.pi * x) / (Double.pi * x)
+                let u = x / half
+                let w = abs(u) >= 1 ? 0 : i0(beta * (1 - u * u).squareRoot()) / norm
+                row[k] = sinc * w; sum += row[k]
+            }
+            for k in 0..<taps { t[p * taps + k] = Float(row[k] / sum) }     // unity DC gain at every phase
+        }
+        return t
+    }()
+    static func interpolate(_ l: [Float], _ r: [Float], _ cap: Int, _ rd: Int, _ frac: Double) -> (Float, Float) {
+        let fp = frac * Double(phases), p = min(Int(fp), phases - 1), fr = Float(fp - Double(p))
+        var sl: Float = 0, sr: Float = 0
+        table.withUnsafeBufferPointer { t in
+            let t0 = t.baseAddress! + p * taps, t1 = t0 + taps
+            var idx = rd - (taps / 2 - 1)
+            if idx < 0 { idx += cap }
+            for k in 0..<taps {
+                let w = t0[k] + (t1[k] - t0[k]) * fr
+                sl += w * l[idx]; sr += w * r[idx]
+                idx += 1; if idx == cap { idx = 0 }
+            }
+        }
+        return (sl, sr)
+    }
 }
 
 final class AudioMixer {
@@ -130,11 +186,12 @@ final class AudioMixer {
     private let stateLock = NSLock()
     private var _settings = AudioSettings()
     private var talkHeld = false, talkLatched = false
+    private var learnRequests: [String: Bool] = [:]        // id -> true = learn, false = clear (consumed by the render thread)
     private var _meters = MixerMeters()
     private var _peak: Float = 0
 
     // render-thread state
-    private var ducker = Ducker(), masterLimiter = Limiter()
+    private var ducker = Ducker(), masterLimiter = LookaheadLimiter(), masterHP = HighPass()
     private var masterGain: Float = -1
     private var masterMeter = MeterState()
     private let blk = AudioMixer.chunk
@@ -166,7 +223,7 @@ final class AudioMixer {
             mFormatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked, mBytesPerPacket: 8, mFramesPerPacket: 1,
             mBytesPerFrame: 8, mChannelsPerFrame: 2, mBitsPerChannel: 32, mReserved: 0)
         CMAudioFormatDescriptionCreate(allocator: nil, asbd: &asbd, layoutSize: 0, layout: nil, magicCookieSize: 0, magicCookie: nil, extensions: nil, formatDescriptionOut: &outFormat)
-        masterLimiter.ceilingDb = -0.3
+        masterLimiter.ceilingDb = -1.0          // sample + inter-sample peaks stay at/below -1 dBFS (AAC overshoots a 0 dBFS master)
         addSource(id: AudioMixer.micID, followsProgram: false, active: true)
     }
 
@@ -216,7 +273,14 @@ final class AudioMixer {
         !s.mic.mute && s.micEnabled && (s.talkMode == .open || held || latched)
     }
 
+    // MARK: noise profile
+
+    /// Learns the noise profile of an input (the mic by default) from the next ~2 s: keep the room quiet while it runs.
+    func learnNoise(id: String = AudioMixer.micID) { stateLock.withLock { learnRequests[id] = true } }
+    func clearNoiseProfile(id: String = AudioMixer.micID) { stateLock.withLock { learnRequests[id] = false } }
+
     // MARK: push
+
 
     /// Push decoded audio (any PCM format; converted to 48k stereo float). Thread-safe, non-blocking.
     func push(id: String, buffers buf: AVAudioPCMBuffer) {
@@ -226,6 +290,9 @@ final class AudioMixer {
         if buf.format != format {
             if inp.converterFormat != buf.format {
                 inp.converter = AVAudioConverter(from: buf.format, to: format)
+                inp.converter?.primeMethod = .none                      // chunk-wise sample-rate conversion must not insert priming silence per buffer
+                inp.converter?.sampleRateConverterAlgorithm = AVSampleRateConverterAlgorithm_Mastering
+                inp.converter?.sampleRateConverterQuality = AVAudioQuality.max.rawValue
                 if buf.format.channelCount > 2 { inp.converter?.channelMap = [0, 1] }
                 inp.converterFormat = buf.format
             }
@@ -315,11 +382,12 @@ final class AudioMixer {
         let (held, latched) = talkState
         inputsLock.lock(); let ins = Array(inputs.values); inputsLock.unlock()
         let live = AudioMixer.micLive(s, held: held, latched: latched)
+        let learns: [String: Bool] = stateLock.withLock { let l = learnRequests; learnRequests = [:]; return l }
         for i in 0..<n { progL[i] = 0; progR[i] = 0; monL[i] = 0; monR[i] = 0; soloL[i] = 0; soloR[i] = 0
             sideL[i] = 0; sideR[i] = 0; micPostL[i] = 0; micPostR[i] = 0; duckCtl[i] = 0 }
         let crossfade: Int = stateLock.withLock { let c = crossfadeLeft > 0 ? crossfadeFramesNow : 0; crossfadeLeft = max(0, crossfadeLeft - n); return c }
         let anySolo = ins.contains { s.channel($0.id).solo }
-        var gateOpen: Float = 0, compGR: Float = 0
+        var gateOpen: Float = 0, compGR: Float = 0, micDenoiseDb: Float = 0, micLearning = false, micProfile = false
         var chMeters: [String: ChannelMeter] = [:]
 
         // master gain ramp (shared by program and the headphone feed)
@@ -333,11 +401,31 @@ final class AudioMixer {
         // 1) voice inputs (mic): voice chain, talk gate, delay, fader
         for inp in ins where inp.kind == .voice {
             let ch = s.channel(inp.id)
-            inp.pull(l, r, n)
             let v = s.voice
+            if let cmd = learns[inp.id] {
+                if inp.denoise == nil { inp.denoise = SpectralDenoiser() }
+                if cmd { inp.denoise!.learn() } else { inp.denoise!.clearProfile() }
+            }
+            // A muted / disabled mic contributes EXACT digital zeros: once the 10 ms mute ramp has finished nothing is pulled,
+            // processed or mixed (room noise cannot leak through gate floors or make-up gain) and the ring is dropped.
+            if !live && inp.talkGain == 0 {
+                inp.pull(l, r, n)                                  // keep draining the ring so it stays live-aligned, but discard
+                for i in 0..<n { l[i] = 0; r[i] = 0 }
+                inp.faderGain = 0
+                inp.meter.update(l, r, n)
+                chMeters[inp.id] = ChannelMeter(peak: inp.meter.peak, rms: inp.meter.rms, clip: false)
+                continue
+            }
+            inp.pull(l, r, n)
             ctl.withUnsafeMutableBufferPointer { cp in
                 let c = cp.baseAddress!
                 if v.hpfOn { inp.hp.configure(cutoff: v.hpfHz); inp.hp.process(l, r, n) }
+                if v.denoiseOn {
+                    if inp.denoise == nil { inp.denoise = SpectralDenoiser() }
+                    inp.denoise!.strength = Float(v.denoiseStrength); inp.denoise!.process(l, r, n)
+                    micDenoiseDb = max(micDenoiseDb, inp.denoise!.reductionDb)
+                } else if let d = inp.denoise, d.learning { d.process(l, r, n) }
+                micLearning = micLearning || (inp.denoise?.learning ?? false); micProfile = micProfile || (inp.denoise?.hasProfile ?? false)
                 // ducking trigger: speech level (RMS) on the cleaned mic, independent of the noise gate threshold
                 inp.speech.thresholdDb = s.duck.thresholdDb; inp.speech.holdMs = s.duck.holdMs
                 inp.speech.process(l, r, n, ctl: c)
@@ -348,10 +436,14 @@ final class AudioMixer {
                     inp.comp.process(l, r, n)
                 }
                 if v.limiterOn { inp.lim.ceilingDb = v.limiterCeilingDb; inp.lim.process(l, r, n) }
-                // talk / mute gate: 5 ms attack, 20 ms release one-pole (click-free key press)
-                let tgt: Float = live ? 1 : 0, cA = AudioMath.coef(ms: 5), cR = AudioMath.coef(ms: 20)
+                // talk / mute gate: 5 ms linear attack, 10 ms linear release that lands on EXACTLY 0 (click-free key press, true silence)
+                let tgt: Float = live ? 1 : 0
+                let up: Float = 1 / Float(AudioMath.msToFrames(5)), down: Float = 1 / Float(AudioMath.msToFrames(10))
                 var tg = inp.talkGain
-                for i in 0..<n { tg += (tgt - tg) * (tgt > tg ? cA : cR); l[i] *= tg; r[i] *= tg; c[i] *= tg }
+                for i in 0..<n {
+                    tg = tgt > tg ? min(tgt, tg + up) : max(tgt, tg - down)
+                    if tg == 0 { l[i] = 0; r[i] = 0; c[i] = 0 } else { l[i] *= tg; r[i] *= tg; c[i] *= tg }
+                }
                 inp.talkGain = tg
                 for i in 0..<n { sideL[i] += l[i]; sideR[i] += r[i] }
                 inp.delay.process(l, r, n, delay: AudioMath.msToFrames(ch.delayMs))
@@ -382,6 +474,19 @@ final class AudioMixer {
         for inp in ins where inp.kind == .game {
             let ch = s.channel(inp.id)
             inp.pull(l, r, n)
+            if s.phoneDenoiseOn {
+                if inp.denoise == nil { inp.denoise = SpectralDenoiser() }
+                inp.denoise!.strength = Float(s.phoneDenoiseStrength); inp.denoise!.process(l, r, n)
+            }
+            if let cmd = learns[inp.id] {
+                if inp.denoise == nil { inp.denoise = SpectralDenoiser() }
+                if cmd { inp.denoise!.learn() } else { inp.denoise!.clearProfile() }
+            }
+            if s.phoneGateOn {
+                // gentle downward expander for hissy feeds: 12 dB max, slow release so music tails survive
+                inp.gate.thresholdDb = s.phoneGateThresholdDb; inp.gate.reductionDb = 12; inp.gate.holdMs = 250; inp.gate.releaseMs = 400
+                gateCtl.withUnsafeMutableBufferPointer { inp.gate.process(l, r, n, ctl: $0.baseAddress!, apply: true) }
+            }
             let phoneMs = inp.id.hasPrefix("device:") ? s.phoneLatencyMs : 0         // phones arrive near-live, the picture ~100 ms later
             inp.delay.process(l, r, n, delay: AudioMath.msToFrames(ch.delayMs + phoneMs))
             if ch.solo { for i in 0..<n { soloL[i] += l[i]; soloR[i] += r[i] } }       // PFL: pre-fader, pre-duck
@@ -415,6 +520,7 @@ final class AudioMixer {
         // 4) master gain + limiter
         for i in 0..<n { progL[i] *= mg[i]; progR[i] *= mg[i] }
         progL.withUnsafeMutableBufferPointer { pl in progR.withUnsafeMutableBufferPointer { pr in
+            if s.masterHpfOn { masterHP.configure(cutoff: s.masterHpfHz); masterHP.process(pl.baseAddress!, pr.baseAddress!, n) }
             masterLimiter.process(pl.baseAddress!, pr.baseAddress!, n)
             masterMeter.update(pl.baseAddress!, pr.baseAddress!, n)
         } }
@@ -438,7 +544,8 @@ final class AudioMixer {
         stateLock.withLock {
             _peak = masterMeter.peak
             _meters = MixerMeters(master: ChannelMeter(peak: masterMeter.peak, rms: masterMeter.rms, clip: masterMeter.clipped),
-                                  channels: chMeters, gateOpen: gateOpen, duckDb: ducker.currentDb, compReductionDb: compGR, micLive: live)
+                                  channels: chMeters, gateOpen: gateOpen, duckDb: ducker.currentDb, compReductionDb: compGR, micLive: live,
+                                  micDenoiseDb: micDenoiseDb, micLearning: micLearning, micProfile: micProfile)
         }
     }
 

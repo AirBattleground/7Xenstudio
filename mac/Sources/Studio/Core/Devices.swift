@@ -32,6 +32,10 @@ struct DeviceStatus: Identifiable, Hashable {
     var fps: Double?, bitrateKbps: Double?
     var width: Int?, height: Int?
     var network: String?
+    /// additive: what the phone says it is sending / why it may be degraded
+    var quality: String?
+    var autoDowngraded = false
+    var rotation: Int?            // phone-reported display rotation (degrees), if the heartbeat carries it
 }
 
 /// Port of devices.ts: phone API logic, heartbeat state (memory only), snapshot requests.
@@ -93,7 +97,7 @@ final class DeviceManager: @unchecked Sendable {
         let wasLive = prev.map { $0.state == "LIVE" && t.timeIntervalSince($0.lastSeenAt) <= deviceOnlineWindow } ?? false
         let state = (input["state"] as? String) ?? prev?.state ?? "IDLE"
         var health: [String: Any] = [:]
-        for k in ["state", "quality", "autoDowngraded", "battery", "charging", "thermal", "cpuPct", "memMB", "fps", "bitrateKbps", "width", "height", "network"] {
+        for k in ["state", "quality", "autoDowngraded", "battery", "charging", "thermal", "cpuPct", "memMB", "fps", "bitrateKbps", "width", "height", "network", "rotation", "orientation", "rotationDegrees"] {
             if let v = input[k] { health[k] = v }
         }
         mutate(dev.id) { l in
@@ -162,7 +166,9 @@ final class DeviceManager: @unchecked Sendable {
                             streamingSince: streaming ? (l?.state == "LIVE" ? l?.streamingSince : ready) : nil,
                             battery: num("battery"), charging: h["charging"] as? Bool, thermal: h["thermal"] as? String,
                             fps: num("fps"), bitrateKbps: num("bitrateKbps"), width: num("width").map(Int.init), height: num("height").map(Int.init),
-                            network: h["network"] as? String)
+                            network: h["network"] as? String, quality: h["quality"] as? String,
+                            autoDowngraded: (h["autoDowngraded"] as? Bool) ?? ((h["autoDowngraded"] as? NSNumber)?.boolValue ?? false),
+                            rotation: (num("rotation") ?? num("orientation") ?? num("rotationDegrees")).map { Int($0) })
     }
     func statuses() async -> [DeviceStatus] {
         var out: [DeviceStatus] = []

@@ -7,6 +7,9 @@ struct StoredDevice: Codable, Identifiable, Hashable {
     var keyHash: String
     var createdAt: String
     var model: String?, osVersion: String?, appVersion: String?, lastHelloAt: String?
+    /// additive: rotation in degrees (0/90/180/270) and horizontal flip chosen by the operator; nil rotation = automatic (phone-reported, else none)
+    var rotation: Int? = nil
+    var flip: Bool? = nil
 }
 struct StoredProp: Codable, Identifiable, Hashable {
     enum Kind: String, Codable { case video, image }
@@ -19,7 +22,11 @@ struct StudioShow: Codable, Identifiable, Hashable {
 }
 struct StudioSettings: Codable, Hashable { var name: String? = nil; var slateText: String? = nil; var introPropId: String? = nil
     /// additive (Audio): mixer + commentary settings
-    var audio: AudioSettings? = nil }
+    var audio: AudioSettings? = nil
+    /// additive (Output/Engine): video bitrate (kbps), HEVC local recording, "Vivid" final-pass enhancement (VividLevel raw value; nil = subtle)
+    var videoKbps: Int? = nil
+    var recordHEVC: Bool? = nil
+    var vivid: Int? = nil }
 
 struct StoreDoc: Codable {
     var devices: [StoredDevice] = []
@@ -158,6 +165,14 @@ final class StudioStore: ObservableObject, @unchecked Sendable {
     func setSlateText(_ t: String) { update { $0.settings.slateText = t } }
     func setIntroProp(_ id: String?) { update { $0.settings.introPropId = id } }
     func setAudio(_ a: AudioSettings) { update { $0.settings.audio = a } }
+    func setVideoKbps(_ k: Int) { update { $0.settings.videoKbps = k } }
+    func setRecordHEVC(_ on: Bool) { update { $0.settings.recordHEVC = on } }
+    func setVivid(_ v: VividLevel) { update { $0.settings.vivid = v.rawValue } }
+    var videoKbps: Int { settings.videoKbps ?? defaultVideoKbps }
+    var vivid: VividLevel { settings.vivid.flatMap(VividLevel.init(rawValue:)) ?? .subtle }
+    func setDeviceTransform(_ id: String, rotation: Int?, flip: Bool?) {
+        update { doc in if let i = doc.devices.firstIndex(where: { $0.id == id }) { doc.devices[i].rotation = rotation; doc.devices[i].flip = flip } }
+    }
     func renameProp(_ id: String, name: String) {
         let n = String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(60))
         guard !n.isEmpty else { return }

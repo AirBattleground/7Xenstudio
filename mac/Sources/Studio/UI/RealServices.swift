@@ -72,7 +72,22 @@ final class RealServices: StudioServices {
     private var showId = ""
     private(set) var audio: AudioController?
     private let cache = MediaCache()
-    private var recordHEVC = false
+    var recordHEVC: Bool { get { store.settings.recordHEVC ?? false } set { store.setRecordHEVC(newValue) } }
+    var videoKbps: Int { get { store.videoKbps } set { store.setVideoKbps(newValue) } }
+    var vividLevel: VividLevel { get { store.vivid } set { store.setVivid(newValue); engine.vivid = newValue } }
+    func setDeviceTransform(id: String, rotation: Int?, flip: Bool?) { store.setDeviceTransform(id, rotation: rotation, flip: flip); pushTransforms() }
+    private var lastTransforms: [SourceRef: SourceTransform] = [:]
+    /// Stored operator choice wins; otherwise the phone-reported display rotation (heartbeat); otherwise none.
+    private func pushTransforms() {
+        var t: [SourceRef: SourceTransform] = [:]
+        for d in store.devices {
+            let reported = statuses.first { $0.id == d.id }?.rotation
+            let deg = d.rotation ?? reported ?? 0
+            let x = SourceTransform(degrees: deg, flip: d.flip ?? false)
+            if x != .identity { t[.device(id: d.id)] = x }
+        }
+        if t != lastTransforms { lastTransforms = t; engine.setTransforms(t) }
+    }
     var slateText: String {
         get { store.settings.slateText ?? "Starting soon" }
         set { store.setSlateText(newValue); engine.slateText = newValue }
@@ -99,6 +114,7 @@ final class RealServices: StudioServices {
         engine.onProgramFrameTimed = { [programBox] pb, t, i in programBox.setTimed(pb, t, i) }
         engine.onPreviewPreview = { [previewBox] in previewBox.set($0) }
         engine.slateText = slateText; engine.introPropId = introPropId
+        engine.vivid = store.vivid
         let ac = AudioController(mixer: engine.audio, store: ingest.store)
         audio = ac
         let mx = engine.audio
@@ -114,6 +130,7 @@ final class RealServices: StudioServices {
             while !Task.isCancelled {
                 let s = await dm.statuses()
                 self?.statuses = s
+                self?.pushTransforms()
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
             }
         }
@@ -126,8 +143,20 @@ final class RealServices: StudioServices {
     }
 
     func devices() -> [DeviceInfo] {
-        statuses.map { DeviceInfo(id: $0.id, name: $0.name, online: $0.online, streaming: $0.streaming, videoReady: $0.videoReady,
-                                  battery: $0.battery.map { Int(($0 * 100).rounded()) }, model: $0.model) }
+        statuses.map { s in
+            var d = DeviceInfo(id: s.id, name: s.name, online: s.online, streaming: s.streaming, videoReady: s.videoReady,
+                               battery: s.battery.map { Int(($0 * 100).rounded()) }, model: s.model)
+            let m = ingest.sourceProvider.metrics(deviceId: s.id)
+            d.width = m?.width ?? 0; d.height = m?.height ?? 0
+            if d.width == 0, let w = s.width, let h = s.height { d.width = w; d.height = h }
+            d.decodedFPS = m?.decodedFPS ?? 0; d.ingestKbps = m?.ingestKbps ?? 0
+            d.reportedKbps = s.bitrateKbps; d.quality = s.quality; d.autoDowngraded = s.autoDowngraded; d.network = s.network
+            let sd = store.device(s.id)
+            d.rotationAuto = sd?.rotation == nil
+            d.rotation = sd?.rotation ?? s.rotation ?? 0
+            d.flip = sd?.flip ?? false
+            return d
+        }
     }
     func createDevice(name: String) async throws -> PairingInfo {
         do {
@@ -174,6 +203,7 @@ final class RealServices: StudioServices {
         let dests = store.destinations.filter { destinationIDs.contains($0.id) } + extraDestinations
         var cfg = OutputConfig(ffmpegPath: ff)
         cfg.destinations = dests
+        cfg.videoKbps = videoKbps
         cfg.recordHEVC = recordHEVC && record
         if record {
             let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd-HHmmss"
@@ -218,6 +248,7 @@ final class RealServices: StudioServices {
             lastStatLog = Date(); let e = engine.stats
             NSLog("ENGINE fps=%.1f missed=%d held=%d gpuAvg=%.2fms gpuP99=%.2fms frameP99=%.2fms", e.fps, e.missedDeadlines, e.heldFrames, e.gpuAvgMs, e.gpuP99Ms, e.frameP99Ms)
         }
+        s.targetKbps = videoKbps
         s.restarts = o.restarts; s.recordHEVC = live && recordHEVC && recordingFile != nil
         s.encoder = s.recordHEVC ? "VideoToolbox H.264 + HEVC rec (hardware)" : "VideoToolbox H.264 (hardware)"
         if live { s.outputs = activeDests.map { d in OutputHealth(id: d.id, name: d.name, ok: o.destinationErrors[d.name] == nil, error: o.destinationErrors[d.name]) } }

@@ -53,7 +53,7 @@ final class OutputPipeline: OutputPipelineProtocol, @unchecked Sendable {
         h264 = try VideoEncoder(codec: kCMVideoCodecType_H264, width: studioWidth, height: studioHeight, fps: config.fps, kbps: config.videoKbps)
         hevc = nil
         if config.recordHEVC && config.recordingURL != nil {
-            hevc = try? VideoEncoder(codec: kCMVideoCodecType_HEVC, width: studioWidth, height: studioHeight, fps: config.fps, kbps: Int(Double(config.videoKbps) * 0.7))
+            hevc = try? VideoEncoder(codec: kCMVideoCodecType_HEVC, width: studioWidth, height: studioHeight, fps: config.fps, kbps: config.videoKbps)   // HEVC at the same bitrate: clearly cleaner than the H.264 feed
         }
         h264?.onFrame = { [weak self] f in self?.muxQ.async { self?.emitVideo(f, pid: TSMuxer.videoPID) } }
         hevc?.onFrame = { [weak self] f in self?.muxQ.async { self?.emitVideo(f, pid: TSMuxer.hevcPID) } }

@@ -19,7 +19,7 @@ enum OutputError: Error, LocalizedError {
 /// Rate-control tuning. Defaults are the shipping values; STUDIO_VT="q=0.9,rt=0,peak=1.5,mode=avg|cbr|vbr,minqp=,maxqp=,delay=,v=1" overrides them for A/B measurement.
 struct VTTuning {
     enum Mode { case average, constant, variable }
-    var quality: Double? = 0.75
+    var quality: Double? = 0.85   // measured: no effect on the Apple-silicon hardware encoder (1.0 = lossless and overruns); harmless elsewhere
     var realtime = true
     var peak = 1.5            // DataRateLimits = peak x average over 1 s (0 = off)
     var mode = Mode.average

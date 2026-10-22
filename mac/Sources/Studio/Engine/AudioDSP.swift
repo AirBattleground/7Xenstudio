@@ -1,6 +1,7 @@
 // Pure audio DSP building blocks for the mixer (48 kHz float, in-place block processing). No AVFoundation here so the
 // math is unit-testable offline. Everything is single-threaded: the mixer calls it from its render queue.
 import Foundation
+import Accelerate
 
 enum AudioMath {
     /// Fader floor: at or below this the channel is treated as silent (-inf).
@@ -56,7 +57,8 @@ struct HighPass {
                 s2 = b2 * x - a2 * y
                 p[i] = y
             }
-            z1[c] = s1; z2[c] = s2
+            // a silent input must decay to exact zero, never to denormals (CPU spikes + non-zero output)
+            z1[c] = abs(s1) < 1e-20 ? 0 : s1; z2[c] = abs(s2) < 1e-20 ? 0 : s2
         }
     }
 }
@@ -169,7 +171,6 @@ struct Compressor {
     private(set) var lastReductionDb: Float = 0
     mutating func process(_ l: UnsafeMutablePointer<Float>, _ r: UnsafeMutablePointer<Float>, _ n: Int) {
         let cA = AudioMath.coef(ms: attackMs), cR = AudioMath.coef(ms: releaseMs)
-        let makeup = Float(pow(10, makeupDb / 20))
         let t = Float(thresholdDb), knee = Float(kneeDb), slope = Float(1 - 1 / max(1, ratio))
         for i in 0..<n {
             let a = max(abs(l[i]), abs(r[i]), 1e-6)
@@ -179,7 +180,8 @@ struct Compressor {
             if 2 * over > knee { target = over * slope }
             else if 2 * over > -knee { let k = over + knee / 2; target = slope * k * k / (2 * max(knee, 1e-3)) }
             grDb += (target - grDb) * (target > grDb ? cA : cR)
-            let g = pow(10, -grDb / 20) * makeup
+            // make-up gain fades in with the gain reduction: a signal below the threshold (room noise, silence) is never boosted
+            let g = pow(10, (-grDb + Float(makeupDb) * min(1, grDb / 4)) / 20)
             l[i] *= g; r[i] *= g
         }
         lastReductionDb = grDb
@@ -239,3 +241,176 @@ struct MeterState {
 
 /// Gain ramp helper: linear ramp from `from` to `to` across a block.
 @inline(__always) func rampGain(_ from: Float, _ to: Float, _ i: Int, _ n: Int) -> Float { from + (to - from) * Float(i + 1) / Float(n) }
+
+/// Look-ahead peak limiter for the master bus: the gain is the sliding minimum of the required gain, smoothed by a box filter of the
+/// same length so it has finished falling before the peak leaves the delay line (no instant-attack gain steps = no distortion
+/// products), then releases exponentially. Detection includes an inter-sample (cubic midpoint) estimate, so the AAC encoder's
+/// reconstruction overshoot stays below the ceiling. Latency: `lookahead - 1` frames.
+struct LookaheadLimiter {
+    var ceilingDb = -1.0
+    var releaseMs = 120.0
+    static let lookahead = 96                                   // 2 ms
+    private let n = LookaheadLimiter.lookahead
+    private var dl: [Float], dr: [Float]                        // audio delay
+    private var need: [Float]                                   // required gain per input sample (ring)
+    private var mins: [Float]                                   // sliding-min output (ring)
+    private var w = 0
+    private var boxSum: Double = 0
+    private var rel: Float = 1
+    private var h1: (Float, Float) = (0, 0), h2: (Float, Float) = (0, 0), h3: (Float, Float) = (0, 0)   // last inputs for the cubic estimate
+    private(set) var lastReductionDb: Float = 0
+    init() {
+        dl = [Float](repeating: 0, count: LookaheadLimiter.lookahead); dr = dl
+        need = [Float](repeating: 1, count: LookaheadLimiter.lookahead); mins = need
+        boxSum = Double(LookaheadLimiter.lookahead)
+    }
+    mutating func process(_ l: UnsafeMutablePointer<Float>, _ r: UnsafeMutablePointer<Float>, _ cnt: Int) {
+        let ceil = Float(pow(10, ceilingDb / 20)), cR = AudioMath.coef(ms: releaseMs)
+        let invN = 1 / Float(n)
+        var worst: Float = 1
+        for i in 0..<cnt {
+            let xl = l[i], xr = r[i]
+            var pk = max(abs(xl), abs(xr))
+            // inter-sample peak between h1 and h2 (cubic through h3,h2,h1,x): (-a + 9b + 9c - d) / 16
+            let ml = abs((-h3.0 + 9 * h2.0 + 9 * h1.0 - xl) * 0.0625), mr = abs((-h3.1 + 9 * h2.1 + 9 * h1.1 - xr) * 0.0625)
+            pk = max(pk, ml, mr)
+            h3 = h2; h2 = h1; h1 = (xl, xr)
+            let req: Float = pk > ceil ? ceil / pk : 1
+            need[w] = req
+            // sliding minimum over the last n requirements (n is small: direct scan beats a deque here)
+            var m = req
+            for k in 0..<n { m = min(m, need[k]) }
+            boxSum += Double(m) - Double(mins[w]); mins[w] = m
+            let g = Float(boxSum) * invN
+            let outG: Float
+            if g < rel { rel = g; outG = g } else { rel += (g - rel) * cR; outG = rel }
+            dl[w] = xl; dr[w] = xr
+            let rp = w + 1 == n ? 0 : w + 1                       // oldest entry = written n-1 samples ago
+            let ol = dl[rp], or = dr[rp]
+            w += 1; if w == n { w = 0 }
+            l[i] = min(max(ol * outG, -ceil), ceil); r[i] = min(max(or * outG, -ceil), ceil)
+            worst = min(worst, outG)
+        }
+        if abs(boxSum - Double(n)) < 1e-9 { boxSum = Double(n) }       // kill accumulated float drift while idle
+        lastReductionDb = -20 * log10(max(worst, 1e-6))
+    }
+}
+
+/// Spectral noise suppressor (Wiener / decision-directed, sqrt-Hann STFT, 512-point frames, 50 % overlap = 10.7 ms latency)
+/// on Accelerate's real FFT. Noise is tracked adaptively (minimum statistics) or taken from a learned profile
+/// (`learn()` averages the next ~2 s of what it hears; call it while only room noise is present).
+final class SpectralDenoiser {
+    static let size = 512, hop = 256, bins = 256
+    static let latencyFrames = size
+    var strength: Float = 0.6                      // 0...1
+    private(set) var learning = false
+    private(set) var hasProfile = false
+    private(set) var reductionDb: Float = 0        // average attenuation of the last frame (for the meter)
+    private let log2n = vDSP_Length(9)
+    private let setup: FFTSetup
+    private let win: [Float]
+    private var ch: [Chan] = [Chan(), Chan()]
+    private var profile = [Float](repeating: 0, count: SpectralDenoiser.bins)
+    private var learnLeft = 0, learnFrames = 0
+    private var learnAcc = [Float](repeating: 0, count: SpectralDenoiser.bins)
+    private var re = [Float](repeating: 0, count: SpectralDenoiser.bins), im = [Float](repeating: 0, count: SpectralDenoiser.bins)
+    private var frame = [Float](repeating: 0, count: SpectralDenoiser.size)
+
+    private final class Chan {
+        var inBuf = [Float](repeating: 0, count: SpectralDenoiser.size)       // last `size` input samples, oldest first
+        var acc = [Float](repeating: 0, count: SpectralDenoiser.size)         // overlap-add accumulator
+        var cur = [Float](repeating: 0, count: SpectralDenoiser.hop)          // block being played out
+        var j = 0, fill = 0
+        var pn = [Float](repeating: -1, count: SpectralDenoiser.bins)         // adaptive noise power
+        var ps = [Float](repeating: 0, count: SpectralDenoiser.bins)          // smoothed power
+        var gPrev = [Float](repeating: 1, count: SpectralDenoiser.bins)
+        var pPrev = [Float](repeating: 0, count: SpectralDenoiser.bins)
+    }
+
+    init() {
+        setup = vDSP_create_fftsetup(9, FFTRadix(kFFTRadix2))!
+        win = (0..<SpectralDenoiser.size).map { Float(sin(Double.pi * Double($0) / Double(SpectralDenoiser.size))) }   // periodic sqrt-Hann
+    }
+    deinit { vDSP_destroy_fftsetup(setup) }
+
+    func learn(seconds: Double = 2) {
+        learnLeft = Int(seconds * AudioMixer.sampleRate) / SpectralDenoiser.hop; learnFrames = 0
+        learnAcc = [Float](repeating: 0, count: SpectralDenoiser.bins); learning = true
+    }
+    func clearProfile() { hasProfile = false; learning = false; learnLeft = 0 }
+    func reset() { ch = [Chan(), Chan()]; reductionDb = 0 }
+
+    /// In place, stereo. Output is delayed by `latencyFrames`.
+    func process(_ l: UnsafeMutablePointer<Float>, _ r: UnsafeMutablePointer<Float>, _ n: Int) {
+        for c in 0..<2 {
+            let p = c == 0 ? l : r
+            let st = ch[c]
+            for i in 0..<n {
+                let out = st.cur[st.j]; st.j += 1
+                                st.inBuf[SpectralDenoiser.size - SpectralDenoiser.hop + st.fill] = p[i]; st.fill += 1
+                p[i] = out
+                if st.fill == SpectralDenoiser.hop {
+                    transform(st, firstChannel: c == 0)
+                    // advance: keep the newest (size - hop) samples as the head of the next frame
+                    for k in 0..<(SpectralDenoiser.size - SpectralDenoiser.hop) { st.inBuf[k] = st.inBuf[k + SpectralDenoiser.hop] }
+                    st.fill = 0; st.j = 0
+                }
+            }
+        }
+    }
+
+    private func transform(_ st: Chan, firstChannel: Bool) {
+        let N = SpectralDenoiser.size, B = SpectralDenoiser.bins
+        // after the head shift the frame is inBuf[0..<N) with newest hop at the end
+        for k in 0..<N { frame[k] = st.inBuf[k] * win[k] }
+        re.withUnsafeMutableBufferPointer { rp in im.withUnsafeMutableBufferPointer { ip in
+            var sc = DSPSplitComplex(realp: rp.baseAddress!, imagp: ip.baseAddress!)
+            frame.withUnsafeBufferPointer { fp in
+                fp.baseAddress!.withMemoryRebound(to: DSPComplex.self, capacity: B) { vDSP_ctoz($0, 2, &sc, 1, vDSP_Length(B)) }
+            }
+            vDSP_fft_zrip(setup, &sc, 1, log2n, FFTDirection(FFT_FORWARD))
+            // zrip forward output is scaled by 2: power in true units = (v/2)^2
+            let sPtr = rp.baseAddress!, iPtr = ip.baseAddress!
+            var redSum: Float = 0
+            let strengthV = min(max(strength, 0), 1)
+            let beta = 0.35 + 2.4 * strengthV                         // Wiener strictness (1 = plain Wiener)
+            let gmin = Float(pow(10, -(6 + 24 * Double(strengthV)) / 20))
+            let overshoot: Float = 1 + 1.5 * strengthV
+            for k in 0..<B {
+                let a = sPtr[k] * 0.5, b = iPtr[k] * 0.5
+                let pw = a * a + b * b + 1e-14
+                st.ps[k] = st.ps[k] == 0 ? pw : st.ps[k] * 0.6 + pw * 0.4
+                if st.pn[k] < 0 { st.pn[k] = st.ps[k] }
+                else if st.ps[k] < st.pn[k] { st.pn[k] = st.ps[k] }
+                else { st.pn[k] *= 1.0015 }
+                if firstChannel, learning { learnAcc[k] += pw }
+                let noise = (hasProfile ? profile[k] : st.pn[k] * 1.8) * overshoot + 1e-14
+                let gamma = pw / noise
+                let xi = 0.9 * st.gPrev[k] * st.gPrev[k] * st.pPrev[k] / noise + 0.1 * max(gamma - 1, 0)
+                var g = xi / (xi + beta)
+                g = max(gmin, min(1, g))
+                st.gPrev[k] = g; st.pPrev[k] = pw
+                sPtr[k] = g * sPtr[k]; iPtr[k] = g * iPtr[k]
+                redSum += g
+            }
+            if firstChannel { reductionDb = -20 * log10(max(redSum / Float(B), 1e-4)) }
+            vDSP_fft_zrip(setup, &sc, 1, log2n, FFTDirection(FFT_INVERSE))
+            frame.withUnsafeMutableBufferPointer { fp in
+                fp.baseAddress!.withMemoryRebound(to: DSPComplex.self, capacity: B) { vDSP_ztoc(&sc, 1, $0, 2, vDSP_Length(B)) }
+            }
+        } }
+        // forward zrip scales by 2 and the inverse by N: a full round trip returns 2N x the signal
+        let scale = 1 / Float(2 * N)
+        for k in 0..<N { st.acc[k] += frame[k] * win[k] * scale }
+        for k in 0..<SpectralDenoiser.hop { st.cur[k] = st.acc[k] }
+        for k in 0..<(N - SpectralDenoiser.hop) { st.acc[k] = st.acc[k + SpectralDenoiser.hop] }
+        for k in (N - SpectralDenoiser.hop)..<N { st.acc[k] = 0 }
+        if firstChannel, learning {
+            learnFrames += 1; learnLeft -= 1
+            if learnLeft <= 0 {
+                learning = false
+                if learnFrames > 0 { for k in 0..<B { profile[k] = learnAcc[k] / Float(learnFrames) }; hasProfile = true }
+            }
+        }
+    }
+}
