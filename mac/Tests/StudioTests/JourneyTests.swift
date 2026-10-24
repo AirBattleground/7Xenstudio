@@ -167,3 +167,20 @@ struct JourneyTests {
         #expect(JourneyStage.autoStartDelay == 72)
     }
 }
+
+@Suite struct JourneyFallbackStartTests {
+    /// /live without match.startsAt (the real server today): the match list's start time drives countdown + PREPARING.
+    @Test func listStartTimeDrivesCountdownAndPreparing() throws {
+        let m = MatchDataStore()
+        let body = #"{"version":1,"control":{"state":"ready"},"match":{"id":"m","title":"T","state":"scheduled"},"teams":[]}"#
+        try m.ingest(Data(body.utf8))
+        m.setControl(state: "ready", unlocksAt: nil)
+        let now = Date()
+        m.setFallbackStart(now.addingTimeInterval(90))
+        var v = m.variables(now: now)
+        #expect(v[MatchKeys.countdown] == "01:30" && v[MatchKeys.preparing] == "")
+        m.setFallbackStart(now.addingTimeInterval(-5))                     // time is up, match not started
+        v = m.variables(now: now)
+        #expect(v[MatchKeys.countdown] == "" && v[MatchKeys.preparing] == "PREPARING" && v[MatchKeys.countdownGhost] == "")
+    }
+}

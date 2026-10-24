@@ -141,6 +141,7 @@ final class AppModel {
         // AirBattleground match control (picker list, start / stop answers) -> journey stage + countdown target
         let ctl = abg.selectedControl
         match.setControl(state: ctl?.state.rawValue, unlocksAt: ctl?.unlocksAtDate)
+        match.setFallbackStart(abg.selectedMatch?.startsAt.flatMap(ABGTime.parse))
         for (k, v) in match.variables() { vars[k] = v }
         set(\.matchStatus, match.status)
         vars["timer"] = SceneVariables.clock(liveSince.map { Int(Date().timeIntervalSince($0)) } ?? 0)

@@ -337,11 +337,24 @@ final class MatchDataStore: TeamBoardSource, @unchecked Sendable {
         return s?.stage
     }
     private func withControl(_ s: MatchSnapshot?) -> MatchSnapshot? {
-        guard useOverride, let c = _control else { return s }
-        var x = s ?? MatchSnapshot()
-        x.controlState = c.state; if let u = c.unlocksAt { x.unlocksAt = u }
+        var x = s
+        if useOverride, let c = _control {
+            var y = x ?? MatchSnapshot()
+            y.controlState = c.state; if let u = c.unlocksAt { y.unlocksAt = u }
+            x = y
+        }
+        // /live without match.startsAt: use the start time from the match list, so the countdown, pre-show,
+        // PREPARING and auto-start still work
+        if let f = _fallbackStart, x != nil || _control != nil {
+            var y = x ?? MatchSnapshot()
+            if y.startsAt == nil { y.startsAt = f }
+            x = y
+        }
         return x
     }
+    private var _fallbackStart: Date?
+    /// The picked match's `startsAt` from GET /matches (used when /live doesn't send one).
+    func setFallbackStart(_ d: Date?) { lock.withLock { _fallbackStart = d } }
     /// What the countdown counts to right now (control.unlocksAt while locked, else match.startsAt); nil when unknown.
     var countdownTarget: Date? { lock.withLock { withControl(snap)?.countdownTarget } }
     var status: Status {
