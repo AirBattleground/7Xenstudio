@@ -145,20 +145,24 @@ extension AppModel {
 
 // MARK: - Auto-start the match 72 s after its start time
 extension AppModel {
-    /// When the studio will press Start by itself (nil = not applicable: off, no start time, not `ready`, already tried).
+    /// When the studio will press Start by itself (nil = not applicable: off, no start time, not `ready`). AirBattleground
+    /// refuses Start until the lobby has been read, so a refused try is repeated every `autoStartRetry` while still ready.
     var autoStartAt: Date? {
-        guard autoStartMatch, abg.selectedControl?.state == .ready, let id = abg.link?.eventId, autoStartTriedFor != id else { return nil }
+        guard autoStartMatch, abg.selectedControl?.state == .ready, let id = abg.link?.eventId else { return nil }
         let t = MatchDataStore.shared.countdownTarget ?? abg.selectedMatch?.startsAt.flatMap(ABGTime.parse)
-        return t?.addingTimeInterval(JourneyStage.autoStartDelay)
+        guard let due = t?.addingTimeInterval(JourneyStage.autoStartDelay) else { return nil }
+        if autoStartTriedFor == id, let last = autoStartTriedAt { return max(due, last.addingTimeInterval(JourneyStage.autoStartRetry)) }
+        return due
     }
     func setAutoStartMatch(_ on: Bool) {
         autoStartMatch = on
         services.integrationStore?.update { $0.settings.autoStartMatch = on }
     }
-    /// Called from refresh (every 0.5 s): Start once, `autoStartDelay` after the start time, if the match is still ready.
+    /// Called from refresh (every 0.5 s): Start `autoStartDelay` after the start time, again every `autoStartRetry`
+    /// while the match is still ready.
     func tickAutoStart(now: Date = Date()) {
         guard let due = autoStartAt, now >= due, let id = abg.link?.eventId, !abg.controlBusy else { return }
-        autoStartTriedFor = id
+        autoStartTriedFor = id; autoStartTriedAt = now
         NSLog("AutoStart: starting match %@ (%.0f s after start time)", id, JourneyStage.autoStartDelay)
         Task { await abg.startMatch() }
     }

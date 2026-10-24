@@ -140,6 +140,8 @@ struct CaptureDecision: Equatable, Sendable {
     var failures = 0
     /// the server was still reading the previous frame (not an error)
     var busy = false
+    /// the server has every result of the match (409 CAPTURE_DONE): capture stops, not an error
+    var finished = false
     var stops: Bool { delay == nil }
 }
 
@@ -170,6 +172,8 @@ enum CapturePolicy {
             return CaptureDecision(delay: nil, message: "Match not found on AirBattleground." + (m.map { " (\($0)) " } ?? " ") + "Pick the match again.", fix: .selectMatch)
         case .conflict(let m):
             return CaptureDecision(delay: conflictRetry, message: m ?? "AirBattleground isn't taking screenshots for this match right now.", paused: true)
+        case .finished:
+            return CaptureDecision(delay: nil, finished: true)
         case .tooLarge:
             return CaptureDecision(delay: interval, message: "AirBattleground said the picture is too large, even at lower quality. Skipped.")
         case .rateLimited(let after):
@@ -191,6 +195,7 @@ enum CapturePolicy {
         case .duplicate: return CaptureOutcome(text: "Already sent (duplicate).", tone: .warn)
         case .busy: return CaptureOutcome(text: "AirBattleground is still reading the previous screenshot. Send again in a moment.", tone: .warn)
         case .conflict(let m): return CaptureOutcome(text: m ?? "AirBattleground isn't taking screenshots for this match right now.", tone: .error)
+        case .finished(let m): return CaptureOutcome(text: m ?? "All results are in for this match.", tone: .warn)
         default:
             return CaptureOutcome(text: decide(r, interval: 5, failures: 0).message ?? "Screenshot not sent.", tone: .error)
         }
@@ -208,8 +213,8 @@ struct AutoCaptureSettings: Codable, Hashable, Sendable {
     /// the one Auto capture: CaptureSource.tag (nil = default: the first clean feed)
     var source: String? = nil
     var interval: Double? = nil
-    /// additive: Auto capture switched on before the match starts waits ("armed") and begins when the match goes live,
-    /// and stops by itself when the match ends (nil = on)
+    /// additive: Auto capture is armed for every picked match and begins `JourneyStage.captureDelay` after its start
+    /// time (lobby frames first), and stops by itself once AirBattleground has every result (nil = on)
     var startWithMatch: Bool? = nil
 }
 
@@ -242,6 +247,8 @@ struct CaptureEnvironment {
     var captureResult: @Sendable (_ matchId: String, _ captureId: String) async -> CaptureResultReply = { _, _ in .notFound }
     /// control.state of the picked match (nil = unknown / legacy)
     var controlState: @MainActor () -> MatchControl.State? = { nil }
+    /// additive: the picked match's start time (nil = not scheduled / unknown)
+    var startsAt: @MainActor () -> Date? = { nil }
     var sleep: @Sendable (Double) async -> Void = { s in try? await Task.sleep(nanoseconds: UInt64(max(0, s) * 1_000_000_000)) }
 }
 
@@ -270,6 +277,8 @@ final class AutoCaptureSession {
     private(set) var message: String?
     private(set) var fix: CaptureFix?
     private(set) var paused = false
+    /// AirBattleground has every result of the match (409 CAPTURE_DONE): stopped on purpose, not an error
+    private(set) var finished = false
     /// interval in use (the server may override it with nextIntervalSeconds)
     private(set) var effectiveInterval: Double
     private(set) var thumbnail: CGImage?
@@ -349,7 +358,7 @@ final class AutoCaptureSession {
         if let b = blocker() { message = b.message; fix = b.fix; return false }
         // pin the source: Program / phones may change while capturing
         if source != resolvedSource { source = resolvedSource }
-        running = true; paused = false; failures = 0; message = nil; fix = nil
+        running = true; paused = false; finished = false; failures = 0; message = nil; fix = nil
         sessionId = UUID().uuidString; sequence = 0; sentCount = 0; skipped = 0; busyCount = 0
         effectiveInterval = interval
         // the first frame is sent one interval after starting (15 s picked = first send at +15 s), then every interval
@@ -432,6 +441,7 @@ final class AutoCaptureSession {
         lastWasOneShot = manual && !running
         // a manual frame's own problem is shown on the Send screenshot line; a transient manual failure doesn't disturb the auto loop
         if !(manual && running && d.message != nil && !d.stops && !d.paused) { message = d.message; fix = d.fix }
+        if d.finished { finished = true }
         if d.stops {
             if running { running = false; nextDueAt = nil }
             paused = false
@@ -496,6 +506,7 @@ final class AutoCaptureSession {
         if let m = message { return m }
         let last = lastSentAt.map { " · last sent \(Self.clock.string(from: $0))" } ?? ""
         let n = sentCount > 0 ? " · \(sentCount) sent" : ""
+        if finished && !running { return "All results are in — capture finished\(n)" }
         if running { return "Capturing every \(Self.secs(effectiveInterval))\(last)\(n)" + (inFlight && sentCount == 0 ? " · sending…" : "") }
         if inFlight { return "Sending…" }
         if lastWasOneShot, let t = lastSentAt { return "Sent at \(Self.clock.string(from: t))" }
@@ -527,6 +538,12 @@ final class AutoCaptureController {
     /// on = capturing or armed (what the Auto capture switch shows)
     var autoOn: Bool { live.running || armed }
     @ObservationIgnored private var lastState: MatchControl.State?
+    /// the match auto-follow last saw picked (a newly picked match is armed)
+    @ObservationIgnored private var lastMatchId: String?
+    /// when the match was first seen ended (safety stop if the results never complete)
+    @ObservationIgnored private var endedAt: Date?
+    /// a match that ended this long ago stops capturing even if AirBattleground still misses some results
+    static let endedTimeout: TimeInterval = 15 * 60
     @ObservationIgnored private let persistence: AutoCapturePersistence
     @ObservationIgnored private var loop: Task<Void, Never>?
     @ObservationIgnored var toastSeconds: Double = 5
@@ -577,24 +594,42 @@ final class AutoCaptureController {
         live.start()
         focusRequest += 1
     }
-    /// The Auto capture switch. With start-with-match on and a match that isn't live yet, it arms instead of starting.
+    /// Start-with-match: is it time to capture? From `captureDelay` after the start time (the lobby is read before
+    /// Start, then the match, then the results) — or right away when the match is already live / ended or has no start time.
+    func shouldCapture(_ st: MatchControl.State?, now: Date) -> Bool {
+        switch st {
+        case .live?, .ended?: return true
+        case .published?: return false
+        default:
+            if let t = live.env.startsAt() { return now >= t.addingTimeInterval(JourneyStage.captureDelay) }
+            return st == nil || st == .ready
+        }
+    }
+    /// The Auto capture switch. With start-with-match on and before the capture time, it arms instead of starting.
     func setAuto(_ on: Bool) {
         guard on else { armed = false; live.stop(); return }
-        let st = live.env.controlState()
-        if startWithMatch, let st, st != .live {
+        if startWithMatch, !shouldCapture(live.env.controlState(), now: live.env.now()) {
             if let b = live.blocker() { _ = b; live.start(); return }    // shows why it can't run (connect / select match)
             armed = true
         } else {
             armed = false; live.start()
         }
     }
-    /// Start-with-match: begin when the match goes live, stop when it ends (ended / published).
+    /// Start-with-match: every newly picked match is armed; capture begins `captureDelay` after its start time and runs
+    /// through the match and the results until AirBattleground answers CAPTURE_DONE (the session stops itself), the
+    /// results are published, or the match has been over for `endedTimeout`.
     func followMatch() {
-        let st = live.env.controlState()
+        let st = live.env.controlState(), now = live.env.now()
         defer { lastState = st }
+        let match = live.env.matchId()
+        if match != lastMatchId {
+            lastMatchId = match; endedAt = nil
+            if startWithMatch, match != nil, !live.running { armed = true }
+        }
         guard startWithMatch else { return }
-        if armed, st == .live { armed = false; live.start() }
-        if live.running, st == .ended || st == .published, lastState == .live || lastState == nil {
+        if armed, shouldCapture(st, now: now), live.start(now: now) { armed = false }
+        if st == .ended { if endedAt == nil { endedAt = now } } else { endedAt = nil }
+        if live.running, st == .published || (endedAt.map { now.timeIntervalSince($0) > Self.endedTimeout } ?? false) {
             live.stop()
         }
     }

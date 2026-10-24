@@ -55,9 +55,15 @@ struct MatchSnapshot: Equatable, Sendable {
     var winner: Winner?
     /// Team Status board rows (nil when the answer has no `teams` array)
     var board: TeamBoardData?
+    /// additive `results.complete`: every team that played has its rank (nil = not sent: legacy server / not ended)
+    var resultsComplete: Bool?
+
+    /// Ended, but AirBattleground is still reading the results screens (the summary would be incomplete).
+    var processing: Bool { (controlState.map { $0 == "ended" } ?? (state == "summary")) && resultsComplete == false }
 
     /// Journey stage: `control.state` when present, else `match.state`.
     var stage: JourneyStage? {
+        if processing { return .gameplay }      // results still coming in: stay on the game until the summary is complete
         if let c = controlState, let st = JourneyStage.forControlState(c) { return st }
         return state.flatMap(JourneyStage.forMatchState)
     }
@@ -85,6 +91,7 @@ enum MatchDataParser {
         let ctl = J.value(root, path: "control") ?? J.value(m, path: "control")
         s.controlState = J.string(J.value(ctl, path: "state"))?.lowercased().trimmingCharacters(in: .whitespaces)
         if let v = J.value(ctl, path: "unlocksAt") { s.unlocksAtText = J.string(v); s.unlocksAt = date(v) }
+        if let r = J.value(root, path: "results") as? [String: Any], let c = r["complete"] as? Bool { s.resultsComplete = c }
         if let board = try? J.parse(data, mapping: TeamBoardMapping()) {
             s.board = board
             s.teamCount = board.teams.count
@@ -173,6 +180,7 @@ enum MatchDataParser {
         put(MatchKeys.matchLine, MatchKeys.line(round: s.round, matchNumber: s.matchNumber, map: s.map))
         if let t = s.countdownTarget { v[MatchKeys.countdown] = countdown(to: t, now: now) }
         applyPreparing(&v, target: s.countdownTarget, startsInStage: s.stage == .startsIn, now: now)
+        v[MatchKeys.processing] = s.processing ? "PROCESSING RESULTS" : ""
         // state in the match.state vocabulary (scheduled/live/summary/finished), derived from control.state when present
         if let st = s.stage { v[MatchKeys.matchState] = st.matchState }
         put(MatchKeys.teamCount, s.teamCount.map(String.init)); put(MatchKeys.aliveTeams, s.aliveTeams.map(String.init))
@@ -323,7 +331,9 @@ final class MatchDataStore: TeamBoardSource, @unchecked Sendable {
         return snap?.controlState == nil || c.changedAt > snapControlChangedAt
     }
     private func effectiveStage(_ s: MatchSnapshot?) -> JourneyStage? {
-        if useOverride, let c = _control, let st = JourneyStage.forControlState(c.state) { return st }
+        if useOverride, let c = _control, let st = JourneyStage.forControlState(c.state) {
+            return st == .summary && s?.resultsComplete == false ? .gameplay : st
+        }
         return s?.stage
     }
     private func withControl(_ s: MatchSnapshot?) -> MatchSnapshot? {

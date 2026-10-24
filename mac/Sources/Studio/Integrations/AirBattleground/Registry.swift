@@ -54,7 +54,8 @@ import Foundation
                 (services?.devices() ?? []).map { CaptureFeed(ref: .device(id: $0.id), name: $0.name, online: $0.online && $0.videoReady) }
             },
             captureResult: { m, c in await link.captureResult(matchId: m, captureId: c) },
-            controlState: { [weak abg] in abg?.selectedControl?.state })
+            controlState: { [weak abg] in abg?.selectedControl?.state },
+            startsAt: { [weak abg] in abg?.selectedMatch?.startsAt.flatMap(ABGTime.parse) })
         return AutoCaptureController(env: env, persistence: services.integrationStore.map { AutoCaptureStorePersistence(store: $0) })
     }
 }

@@ -237,14 +237,14 @@ private struct AutoCaptureCard: View {
             }
         }) {
             if model.capture.armed {
-                Label("Armed — starts capturing when the match starts", systemImage: "clock.badge.checkmark")
+                Label("Armed — starts capturing \(Int(JourneyStage.captureDelay)) s after the match start time", systemImage: "clock.badge.checkmark")
                     .font(Theme.Font.caption.weight(.semibold)).foregroundStyle(Theme.warn)
             }
             Toggle(isOn: Binding(get: { model.capture.startWithMatch }, set: { model.capture.startWithMatch = $0 })) {
-                Text("Start when the match starts, stop when it ends").font(Theme.Font.caption)
+                Text("Start \(Int(JourneyStage.captureDelay)) s after the start time, stop when all results are in").font(Theme.Font.caption)
             }
             .toggleStyle(.switch).controlSize(.mini)
-            .help("On: switching Auto capture on before the match waits until AirBattleground reports the match live, then captures until the match ends. Off: captures as soon as you switch it on.")
+            .help("On: every picked match is armed. Capture starts \(Int(JourneyStage.captureDelay)) s after the start time (lobby team list, then the match, then the results screens) and stops when AirBattleground has every result. Off: captures as soon as you switch it on, until you stop it.")
             CaptureSourcePicker(session: session)
             if let w = session.overlayWarning {
                 Label(w, systemImage: "exclamationmark.triangle.fill").font(Theme.Font.caption).foregroundStyle(Theme.warn)
@@ -501,6 +501,6 @@ struct AutoStartRow: View {
                 }
             }
         }
-        .help("If the match hasn't been started \(Int(JourneyStage.autoStartDelay)) seconds after its start time, the studio presses Start once by itself.")
+        .help("If the match hasn't been started \(Int(JourneyStage.autoStartDelay)) seconds after its start time, the studio presses Start by itself (again every \(Int(JourneyStage.autoStartRetry)) s until AirBattleground has read the lobby).")
     }
 }

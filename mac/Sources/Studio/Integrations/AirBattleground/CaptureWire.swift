@@ -90,6 +90,8 @@ enum CaptureReply: Equatable, Sendable {
     case matchNotFound(String?)         // 404
     /// 409: match published (or locked for anything but lobby frames). The server's message.
     case conflict(String?)
+    /// 409 code CAPTURE_DONE: every result is in, auto capture is done for this match. The server's message.
+    case finished(String?)
     case tooLarge                       // 413
     case rateLimited(retryAfter: Double?) // 429
     case serverError(Int, String?)      // 5xx and anything else unexpected
@@ -118,7 +120,7 @@ enum CaptureReply: Equatable, Sendable {
         case 400: return .badRequest(message ?? "AirBattleground rejected the capture.")
         case 401, 403: return .keyRejected
         case 404: return .matchNotFound(message)
-        case 409: return .conflict(message)
+        case 409: return StudioLinkClient.errorCode(body) == "CAPTURE_DONE" ? .finished(message) : .conflict(message)
         case 413: return .tooLarge
         case 429: return .rateLimited(retryAfter: parseRetryAfter(retryAfter, now: now))
         default: return .serverError(status, message)

@@ -184,6 +184,13 @@ func sampleUpload(_ kind: CaptureKind = .liveStatus, jpeg: Data = Data([0xFF, 0x
         let nf = CapturePolicy.decide(.matchNotFound(nil), interval: 5, failures: 0)
         #expect(nf.stops && nf.fix == .selectMatch && nf.message?.contains("Match not found") == true)
     }
+    @Test func captureDoneStopsWithoutAnError() {
+        let body = Data(#"{"error":{"code":"CAPTURE_DONE","message":"All results are in"}}"#.utf8)
+        #expect(CaptureReply.from(status: 409, body: body) == .finished("All results are in"))
+        #expect(CaptureReply.from(status: 409, body: Data(#"{"error":{"code":"CONFLICT","message":"Match is published"}}"#.utf8)) == .conflict("Match is published"))
+        let d = CapturePolicy.decide(.finished("All results are in"), interval: 5, failures: 0)
+        #expect(d.stops && d.finished && d.message == nil && !d.paused)
+    }
     @Test func pausesRateLimitsAndBacksOff() {
         let nl = CapturePolicy.decide(.conflict("Match is published"), interval: 5, failures: 0)
         #expect(nl.delay == 30 && nl.paused && nl.message == "Match is published")
@@ -708,5 +715,57 @@ func sampleUpload(_ kind: CaptureKind = .liveStatus, jpeg: Data = Data([0xFF, 0x
         f.mock.captureReply = .accepted(captureId: "c", queuePosition: 0, nextIntervalSeconds: 30)
         f.now = s.nextDueAt!; s.pump(now: f.now); await s.currentTask?.value
         #expect(s.effectiveInterval == 30)                                   // server may slow down
+    }
+}
+
+// MARK: start-with-match: lobby from start time + 30 s, through the results, until AirBattleground has them all
+
+@Suite(.serialized) @MainActor struct CaptureFollowMatchTests {
+    @Test func armsThePickedMatchAndStartsThirtySecondsAfterItsStartTime() {
+        let f = FakeStudio()
+        f.control = .ready
+        let start = f.now.addingTimeInterval(60)
+        var env = f.env()
+        env.startsAt = { start }
+        let c = AutoCaptureController(env: env, startLoop: false)
+        c.followMatch()
+        #expect(c.armed && !c.live.running)
+        f.now = start.addingTimeInterval(29); c.followMatch()
+        #expect(c.armed && !c.live.running)
+        f.now = start.addingTimeInterval(30); c.followMatch()
+        #expect(!c.armed && c.live.running)
+        // the match ends: capture keeps going (results screens) until the server says every result is in
+        f.control = .ended; c.followMatch()
+        #expect(c.live.running)
+        c.live.apply(.finished("All results are in"))
+        #expect(!c.live.running && c.live.finished && !c.live.isError && c.live.statusLine.hasPrefix("All results are in"))
+    }
+    @Test func publishedOrLongEndedStopsAndTheNextMatchIsArmed() {
+        let f = FakeStudio()
+        f.control = .live
+        let c = AutoCaptureController(env: f.env(), startLoop: false)
+        c.followMatch(); #expect(c.live.running)
+        f.control = .ended; c.followMatch()
+        f.now = f.now.addingTimeInterval(AutoCaptureController.endedTimeout + 1); c.followMatch()
+        #expect(!c.live.running)
+        f.matchId = "m2"; f.control = .live; c.followMatch()
+        #expect(c.live.running)
+        f.control = .published; c.followMatch()
+        #expect(!c.live.running)
+    }
+}
+
+@Suite struct MatchProcessingTests {
+    @Test func endedWithoutEveryResultStaysOnGameplayAndSaysProcessing() throws {
+        let json = #"{"match":{"state":"summary"},"control":{"state":"ended"},"results":{"complete":false,"placed":3,"teams":16}}"#
+        let s = try MatchDataParser.parse(Data(json.utf8))
+        #expect(s.processing && s.stage == .gameplay)
+        #expect(MatchDataParser.variables(s, now: Date())[MatchKeys.processing] == "PROCESSING RESULTS")
+        let done = try MatchDataParser.parse(Data(json.replacingOccurrences(of: #""complete":false"#, with: #""complete":true"#).utf8))
+        #expect(!done.processing && done.stage == .summary)
+        #expect(MatchDataParser.variables(done, now: Date())[MatchKeys.processing] == "")
+        // older servers send no `results`: unchanged
+        let legacy = try MatchDataParser.parse(Data(#"{"match":{"state":"summary"},"control":{"state":"ended"}}"#.utf8))
+        #expect(!legacy.processing && legacy.stage == .summary)
     }
 }

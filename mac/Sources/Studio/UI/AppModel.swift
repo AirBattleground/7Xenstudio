@@ -24,8 +24,9 @@ final class AppModel {
     /// Stage whose scene auto-follow put on Program last (AUTO badge); cleared by a manual take.
     var autoTakenStage: JourneyStage?
     @ObservationIgnored var lastPreShowReplay = Date.distantPast
-    /// Auto-start: the match id it was already tried for (never retried automatically; the operator can press Start).
+    /// Auto-start: the match id it was last tried for, and when (retried every `autoStartRetry` while still ready).
     @ObservationIgnored var autoStartTriedFor: String?
+    @ObservationIgnored var autoStartTriedAt: Date?
     var autoStartMatch = true
     var matchStatus = MatchDataStore.Status()
     @ObservationIgnored var knownSceneIds: Set<String>?

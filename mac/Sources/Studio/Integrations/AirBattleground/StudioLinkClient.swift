@@ -47,6 +47,11 @@ struct StudioLinkClient: Sendable {
         NSLog("%@", "StudioLink: \(req.httpMethod ?? "GET") \(req.url?.path ?? "?") -> status=\(status.map(String.init) ?? "none") latency=\(ms)ms \(detail)")
     }
 
+    /// `error.code` of an error body ("CAPTURE_DONE", "CONFLICT", …), nil when there is none.
+    static func errorCode(_ data: Data) -> String? {
+        struct Err: Decodable { struct E: Decodable { var code: String? }; var error: E? }
+        return (try? JSONDecoder().decode(Err.self, from: data))?.error?.code
+    }
     static func errorMessage(_ data: Data) -> String? {
         struct Err: Decodable { struct E: Decodable { var message: String? }; var error: E? }
         return (try? JSONDecoder().decode(Err.self, from: data))?.error?.message.flatMap { $0.isEmpty ? nil : $0 }

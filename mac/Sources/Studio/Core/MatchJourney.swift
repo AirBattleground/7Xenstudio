@@ -37,6 +37,12 @@ enum JourneyStage: String, Codable, CaseIterable, Identifiable {
     static let preShowLead: TimeInterval = 15 * 60
     /// The studio presses Start by itself this long after the start time when the match is still `ready` (auto-start on).
     static let autoStartDelay: TimeInterval = 72
+    /// additive: auto-start is tried again this often while the match is still `ready` (AirBattleground refuses Start
+    /// until the lobby has been read from the auto-capture frames).
+    static let autoStartRetry: TimeInterval = 15
+    /// additive: auto capture (start-with-match) begins this long after the match start time and runs until every
+    /// result is in (AirBattleground answers 409 CAPTURE_DONE) or the operator stops it.
+    static let captureDelay: TimeInterval = 30
     /// The pre-show scene is re-played (its one-shot animations re-taken) this often while on Program.
     static let preShowRepeat: TimeInterval = 3.2
     /// additive: AirBattleground match `control.state` (preferred over `match.state` when present):
@@ -72,6 +78,9 @@ enum MatchKeys {
     static let countdownGhost = "countdownGhost"
     /// "MIN  :  SEC" under the dial, "LOBBY" while preparing.
     static let countdownLabel = "countdownLabel"
+    /// additive: "PROCESSING RESULTS" once the match has ended while AirBattleground is still reading the results
+    /// screens (the journey stays on gameplay until every team has its rank), else "".
+    static let processing = "processing"
     static let teamCount = "teamCount"            // "16"
     static let aliveTeams = "aliveTeams"          // "9" teams with status > 0
     static let elapsed = "elapsed"                // "12:34" match time since the match went live (empty before)
