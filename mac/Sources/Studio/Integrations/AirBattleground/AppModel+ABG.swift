@@ -24,6 +24,8 @@ extension AppModel {
             do { try await services.goLive(record: alsoRecord, destinationIDs: otherDestinationIDs, extraDestinations: ingest.destinations) }
             catch { await abg.abortBroadcast(); throw error }
             abg.beginHeartbeats()
+            // YouTube thumbnail: once, in the background (never blocks or fails Go Live)
+            thumbnail.broadcastStarted(id: ingest.broadcastId, matchId: abg.link?.eventId)
         }
     }
 }

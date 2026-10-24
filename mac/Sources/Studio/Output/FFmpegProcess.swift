@@ -103,7 +103,10 @@ enum FFmpegArgs {
         if let r = recording {
             a += ["-map", hevcRecording ? "0:v:1" : "0:v:0", "-map", "0:a:0"] + common
             if hevcRecording { a += ["-tag:v", "hvc1"] }
-            a += ["-f", "mp4", "-movflags", "+frag_keyframe+empty_moov+default_base_moof", r]
+            // NOT empty_moov: that writes the moov before the first packet, i.e. before aac_adtstoasc has produced the
+            // AudioSpecificConfig, so the esds had no decoder config (mp4a.40.0): QuickTime / AVFoundation dropped the audio track
+            // entirely and other players had to guess. Without it the moov goes out with the first fragment (one GOP later).
+            a += ["-f", "mp4", "-movflags", "+frag_keyframe+default_base_moof", r]
             any = true
         }
         var labels: [String] = []

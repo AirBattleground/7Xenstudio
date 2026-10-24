@@ -76,46 +76,50 @@ final class ImageSource: FrameSource, @unchecked Sendable {
     deinit { timer?.cancel() }
 }
 
-/// A video prop: looping AVQueuePlayer, newest decoded frame via AVPlayerItemVideoOutput (muted).
+/// A video prop: one AVPlayer + one AVPlayerItemVideoOutput, rewound to 0 at the end (loops), muted.
+/// (Not AVPlayerLooper: it plays copies of the item, and a single video output can only feed one item, so the output
+/// ended up on a queued copy that never played and the prop showed a frozen frame.)
 final class VideoFileSource: FrameSource, @unchecked Sendable {
     let ref: SourceRef
-    private let player = AVQueuePlayer()
-    private var looper: AVPlayerLooper?
+    private let player = AVPlayer()
     private let lock = NSLock()
     private var output: AVPlayerItemVideoOutput?
     private var frame: CVPixelBuffer?
     private var frameCount = 0, windowStart = CACurrentMediaTime(), fps = 0.0
     private var stopped = false
-    private var timer: DispatchSourceTimer?
-    private let queue = DispatchQueue(label: "video.source", qos: .userInteractive)
+    private var endObserver: NSObjectProtocol?
 
     init(ref: SourceRef, file: URL) {
         self.ref = ref
         player.isMuted = true
+        player.actionAtItemEnd = .none
         let item = AVPlayerItem(url: file)
         let out = AVPlayerItemVideoOutput(pixelBufferAttributes: [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
             kCVPixelBufferIOSurfacePropertiesKey as String: [String: Any](),
             kCVPixelBufferMetalCompatibilityKey as String: true])
         out.suppressesPlayerRendering = true
+        item.add(out)
         output = out
-        looper = AVPlayerLooper(player: player, templateItem: item)
-        // AVPlayerLooper copies the template item: attach the output to every queued item as they come up.
-        let t = DispatchSource.makeTimerSource(queue: queue)
-        t.schedule(deadline: .now(), repeating: 0.25)
-        t.setEventHandler { [weak self] in self?.attach() }
-        t.resume(); timer = t
+        player.replaceCurrentItem(with: item)
+        endObserver = NotificationCenter.default.addObserver(forName: AVPlayerItem.didPlayToEndTimeNotification, object: item, queue: nil) { [weak self] _ in
+            guard let self, !self.isStopped else { return }
+            self.player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero)
+            self.player.play()
+        }
         player.play()
-    }
-
-    private func attach() {
-        guard !isStopped, let out = output else { return }
-        for it in player.items() where !it.outputs.contains(where: { $0 === out }) { it.add(out) }
-        if player.timeControlStatus == .paused { player.play() }
     }
 
     var isStopped: Bool { lock.lock(); defer { lock.unlock() }; return stopped }
     var decodedFPS: Double { lock.lock(); defer { lock.unlock() }; return fps }
+
+    /// Play from the first frame again (a countdown/intro video taken to program must start at its beginning, not wherever
+    /// the shared player happens to be from an earlier preview or thumbnail).
+    func restart() {
+        guard !isStopped else { return }
+        player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero)
+        player.play()
+    }
 
     func latestFrame() -> CVPixelBuffer? {
         lock.lock(); let out = output; lock.unlock()
@@ -135,8 +139,8 @@ final class VideoFileSource: FrameSource, @unchecked Sendable {
     func stop() {
         lock.lock(); let was = stopped; stopped = true; lock.unlock()
         guard !was else { return }
-        timer?.cancel(); timer = nil
-        player.pause(); looper?.disableLooping(); player.removeAllItems()
+        if let o = endObserver { NotificationCenter.default.removeObserver(o) }
+        player.pause(); player.replaceCurrentItem(with: nil)
         lock.lock(); frame = nil; output = nil; lock.unlock()
     }
     deinit { stop() }

@@ -284,9 +284,11 @@ final class IngestSourceProvider: SourceProvider, @unchecked Sendable {
         case .prop(let id):
             guard let p = propResolver?(id) else { return nil }
             s = p.kind == .video ? VideoFileSource(ref: ref, file: p.url) : ImageSource(ref: ref, file: p.url)
+            if p.kind == .video { startFileAudio(ref, p.url) }
         case .image(let id):
             guard let p = propResolver?(id) else { return nil }
             s = p.kind == .image ? ImageSource(ref: ref, file: p.url) : VideoFileSource(ref: ref, file: p.url)
+            if p.kind == .video { startFileAudio(ref, p.url) }
         case .web(let u):
             guard let url = URL(string: u), ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return nil }
             s = ImageSource(ref: ref, webURL: url, cacheDir: webCacheDir)
@@ -295,6 +297,33 @@ final class IngestSourceProvider: SourceProvider, @unchecked Sendable {
         sources[ref] = s; return s
     }
     func phone(_ id: String) -> PhoneSource? { source(for: .device(id: id)) as? PhoneSource }
+    /// Restart video props from frame 0 (creates the source if it isn't running yet), and their audio with them.
+    func restartVideos(_ refs: Set<SourceRef>) {
+        for r in refs {
+            switch r {
+            case .prop, .image:
+                guard let v = source(for: r) as? VideoFileSource else { continue }
+                v.restart()
+                lock.lock(); let f = fileAudio[r]; lock.unlock()
+                if let f { startFileAudio(r, f) }
+            default: break
+            }
+        }
+    }
+    private var fileAudio: [SourceRef: URL] = [:]
+    /// A video prop's soundtrack, decoded in real time by ffmpeg (looping like the picture) into the mixer under
+    /// engineSourceKey(ref), so it is heard while the prop's scene is on program. Caller may hold `lock`.
+    private func startFileAudio(_ ref: SourceRef, _ url: URL) {
+        guard let ff = ffmpegPath, phoneAudio != nil, !AVURLAsset(url: url).tracks(withMediaType: .audio).isEmpty else { return }
+        let key = engineSourceKey(ref)
+        onPhoneCreated?(key)
+        let held = !lock.try()
+        let old = readers.removeValue(forKey: ref); fileAudio[ref] = url
+        let rd = PhoneAudioReader(input: url.path, inputArgs: ["-re", "-stream_loop", "-1"], ffmpegPath: ff) { [weak self] l, r in self?.phoneAudio?(key, l, r) }
+        readers[ref] = rd
+        if !held { lock.unlock() }
+        old?.stop(); rd.start()
+    }
     func metrics(deviceId: String) -> SourceMetrics? {
         lock.lock(); defer { lock.unlock() }
         return (sources[.device(id: deviceId)] as? PhoneSource)?.metrics

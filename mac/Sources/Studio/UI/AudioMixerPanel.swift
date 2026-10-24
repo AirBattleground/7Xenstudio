@@ -103,8 +103,11 @@ struct ChannelStrip: View {
                 Text(title).font(Theme.Font.bodyBold).foregroundStyle(Theme.text).lineLimit(1)
                 Text(subtitle ?? " ").font(Theme.Font.label).foregroundStyle(live ? Theme.ok : Theme.faint).lineLimit(1)
             }.frame(width: 84)
-            Text(dbText(ch.gainDb)).font(Theme.Font.mono(11, .semibold)).foregroundStyle(ch.mute ? Theme.faint : Theme.text)
-                .frame(width: 56, height: 20).background(Theme.well, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+            HStack(spacing: 4) {
+                Text(dbText(ch.gainDb)).font(Theme.Font.mono(11, .semibold)).foregroundStyle(ch.mute ? Theme.faint : Theme.text)
+                    .frame(width: 48, height: 20).background(Theme.well, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                ClipLED(audio: audio, id: id)
+            }
             HStack(alignment: .top, spacing: 6) {
                 VFader(db: Binding(get: { audio.channel(id).gainDb }, set: { v in audio.update(id) { $0.gainDb = v } }),
                        tint: isMic ? Theme.program : Theme.accent)
@@ -134,6 +137,26 @@ struct StripMeter: View {
     }
 }
 
+/// CLIP lamp next to a strip's gain readout, latched ~1.5 s by the mixer. Channel: the source itself reached -0.5 dBFS before the
+/// fader, or the fader pushed it into the channel's safety limiter (0 dBFS). Master: the bus hit 0 dBFS before the master limiter.
+struct ClipLED: View {
+    let audio: AudioController
+    let id: String?          // nil = master
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 15)) { _ in
+            let m = audio.meters()
+            let on = (id.map { m.channels[$0]?.clip ?? false } ?? m.master.clip)
+            Text("CLIP").font(.system(size: 8, weight: .heavy)).tracking(0.3)
+                .foregroundStyle(on ? Color.white : Theme.faint)
+                .frame(width: 30, height: 20)
+                .background(on ? Theme.program : Theme.well, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                .help(id == nil ? "Master bus over 0 dBFS before the limiter: lower the master or the hottest channels"
+                                : "Input too hot: the source reached -0.5 dBFS, or this fader is pushing it into the channel limiter. Lower the fader (0 dB or below).")
+                .accessibilityLabel(on ? "Clipping" : "No clipping")
+        }
+    }
+}
+
 struct MasterStrip: View {
     let audio: AudioController
     var body: some View {
@@ -142,8 +165,11 @@ struct MasterStrip: View {
                 Text("Master").font(Theme.Font.bodyBold).foregroundStyle(Theme.text)
                 Text("PROGRAM").font(Theme.Font.label).foregroundStyle(Theme.program)
             }.frame(width: 84)
-            Text(dbText(audio.settings.masterDb)).font(Theme.Font.mono(11, .semibold)).foregroundStyle(Theme.text)
-                .frame(width: 56, height: 20).background(Theme.well, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+            HStack(spacing: 4) {
+                Text(dbText(audio.settings.masterDb)).font(Theme.Font.mono(11, .semibold)).foregroundStyle(Theme.text)
+                    .frame(width: 48, height: 20).background(Theme.well, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                ClipLED(audio: audio, id: nil)
+            }
             HStack(alignment: .top, spacing: 6) {
                 VFader(db: Binding(get: { audio.settings.masterDb }, set: { audio.settings.masterDb = $0 }), tint: Theme.program)
                 StripMeter(audio: audio, id: nil)

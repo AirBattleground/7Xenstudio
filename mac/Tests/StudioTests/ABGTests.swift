@@ -285,3 +285,168 @@ private let goodKey = "sw_abcdefgh12345678"
         #expect(d("https://nope/x/y") == nil && d("rtmp://host") == nil)
     }
 }
+
+// MARK: - match control (new contract)
+
+@Suite struct ControlDecodingTests {
+    @Test func listItemsWithAndWithoutControl() async throws {
+        let host = "ctl-list.abg.test"
+        let body = #"""
+        {"items":[
+          {"id":"m1","title":"Match 1","subtitle":"Scrim","startsAt":"2026-10-23T17:00:00Z","status":"upcoming",
+           "control":{"state":"locked","unlocksAt":"2026-10-23T17:00:00.000Z","reason":"Registration is open until 10:30 PM (12/16 slots filled)","teams":12,"slots":"16"}},
+          {"id":"m2","title":"Match 2","status":"live","control":{"state":"LIVE","unlocksAt":null}},
+          {"id":"m3","title":"Match 3","status":"upcoming"},
+          {"id":"m4","title":"Match 4","status":"upcoming","control":{"state":"paused-by-aliens"}},
+          {"id":"m5","title":"Match 5","status":"done","control":null}
+        ]}
+        """#
+        let s = ABGStub.session(host: host) { _ in (200, body) }
+        let ms = try await StudioLinkClient(host: "https://\(host)", key: goodKey, session: s).matches()
+        #expect(ms.count == 5)
+        let c = try #require(ms[0].control)
+        #expect(c.state == .locked && c.reason?.hasPrefix("Registration is open") == true && c.teams == 12 && c.slots == 16 && c.teamsLine == "12/16 teams")
+        #expect(c.unlocksAtDate == ISO8601DateFormatter().date(from: "2026-10-23T17:00:00Z"))
+        #expect(ms[1].control == MatchControl(state: .live))
+        #expect(ms[2].control == nil && ms[3].control == nil && ms[4].control == nil)   // absent / unknown -> legacy
+    }
+    @Test func chipsAndCountdown() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let f = ISO8601DateFormatter()
+        let locked = MatchControl(state: .locked, unlocksAt: f.string(from: now.addingTimeInterval(751)))
+        #expect(locked.chip(now: now) == "Locked · unlocks in 12:31" && locked.secondsToUnlock(now: now) == 751)
+        #expect(locked.chip(now: now.addingTimeInterval(800)) == "Locked · unlocking…")
+        #expect(MatchControl(state: .locked, unlocksAt: f.string(from: now.addingTimeInterval(4000))).chip(now: now) == "Locked · unlocks in 1:06:40")
+        #expect(MatchControl(state: .locked).chip(now: now) == "Locked")
+        #expect(MatchControl(state: .ready).chip(now: now) == "Ready" && MatchControl(state: .live).chip(now: now) == "Live")
+        #expect(MatchControl(state: .ended).chip(now: now) == "Ended" && MatchControl(state: .published).chip(now: now) == "Published")
+        #expect(MatchControl(state: .ready, unlocksAt: f.string(from: now)).secondsToUnlock(now: now) == nil)
+    }
+    @Test func liveBodyBlocks() {
+        let json = #"{"version":3,"match":{"id":"m1","state":"live"},"control":{"state":"live"},"autoCapture":{"active":true,"lastCaptureAt":"2026-10-23T14:05:12.123Z","lastAppliedAt":"2026-10-23T14:05:10Z","lastError":"Frame too dark","paused":true,"lastDetected":"IN_GAME"}}"#
+        let b = LiveControlBody.parse(Data(json.utf8))
+        #expect(b?.matchId == "m1" && b?.control == MatchControl(state: .live))
+        let a = b?.autoCapture
+        #expect(a?.active == true && a?.paused == true && a?.lastError == "Frame too dark" && a?.lastDetected == "in_game")
+        #expect(a?.lastCaptureAt == ABGTime.parse("2026-10-23T14:05:12.123Z") && a?.lastAppliedAt != nil)
+        let bare = LiveControlBody.parse(Data(#"{"teams":[]}"#.utf8))
+        #expect(bare?.control == nil && bare?.autoCapture == nil)
+        #expect(LiveControlBody.parse(Data("nope".utf8)) == nil)
+    }
+}
+
+@Suite struct ControlButtonTests {
+    @Test func buttonForEveryState() {
+        #expect(MatchControlButton.make(MatchControl(state: .locked)) == .start(enabled: false))
+        #expect(MatchControlButton.make(MatchControl(state: .ready)) == .start(enabled: true))
+        #expect(MatchControlButton.make(MatchControl(state: .live)) == .stop)
+        #expect(MatchControlButton.make(MatchControl(state: .ended)) == .none)
+        #expect(MatchControlButton.make(MatchControl(state: .published)) == .none)
+        // legacy server (no control block): everything allowed as before
+        #expect(MatchControlButton.make(nil, legacyStatus: .upcoming) == .start(enabled: true))
+        #expect(MatchControlButton.make(nil, legacyStatus: .live) == .stop)
+        #expect(MatchControlButton.make(nil) == .start(enabled: true))
+        // control wins over the legacy status
+        #expect(MatchControlButton.make(MatchControl(state: .locked), legacyStatus: .live) == .start(enabled: false))
+    }
+}
+
+@Suite struct ControlClientTests {
+    @Test func startStopRequestsAndConflicts() async throws {
+        let host = "ctl-client.abg.test"
+        let s = ABGStub.session(host: host) { r in
+            if r.path.hasSuffix("/x/start") { return (409, #"{"error":{"code":"CONFLICT","message":"Match 1 is locked until 10:30 PM."}}"#) }
+            if r.path.hasSuffix("/gone/stop") { return (404, #"{"error":{"code":"NOT_FOUND","message":"No such match"}}"#) }
+            return (200, #"{"match":{"id":"m 1"},"control":{"state":"live"}}"#)
+        }
+        let c = StudioLinkClient(host: "https://\(host)", key: goodKey, session: s)
+        let body = try await c.startMatch("m 1")
+        #expect(LiveControlBody.parse(body)?.control?.state == .live)
+        _ = try await c.stopMatch("m 1")
+        let reqs = ABGStub.requests(host)
+        #expect(reqs[0].method == "POST" && reqs[0].path == "/api/studio-link/matches/m 1/start" && reqs[0].key == goodKey && reqs[0].body == nil)
+        #expect(reqs[1].path == "/api/studio-link/matches/m 1/stop")
+        await #expect(throws: ABGError.conflict("Match 1 is locked until 10:30 PM.")) { _ = try await c.startMatch("x") }
+        await #expect(throws: ABGError.matchNotFound("No such match")) { _ = try await c.stopMatch("gone") }
+        #expect(ABGError.conflict("Match 1 is locked until 10:30 PM.").errorDescription == "Match 1 is locked until 10:30 PM.")
+    }
+    @Test func serviceForwardsStartStop() async throws {
+        let host = "ctl-svc.abg.test"
+        let s = ABGStub.session(host: host) { _ in (409, #"{"error":{"message":"Match is not live"}}"#) }
+        let svc = StudioLinkService(secrets: ABGMemorySecretStore(ABGCredentials(host: "https://\(host)", key: goodKey, account: ABGAccount(name: "A", org: nil))), session: s)
+        await #expect(throws: ABGError.conflict("Match is not live")) { _ = try await svc.stopMatch(id: "m1") }
+        await #expect(throws: ABGError.notConnected) { _ = try await StudioLinkService(secrets: ABGMemorySecretStore(), session: s).startMatch(id: "m1") }
+    }
+}
+
+@Suite @MainActor struct ControlControllerTests {
+    func make() -> (ABGController, MockBroadcastLinkService) {
+        let mock = MockBroadcastLinkService(account: ABGAccount(name: "A", org: nil))
+        mock.matchList = MockBroadcastLinkService.controlDemoMatches(now: Date())
+        let c = ABGController(service: mock, startPresence: false); c.retryDelay = 0
+        return (c, mock)
+    }
+    @Test func startStopFollowTheServerState() async {
+        let (c, mock) = make()
+        await c.refreshMatches()
+        c.select(c.matches[1])                      // ready
+        #expect(c.selectedControl?.state == .ready && c.controlButton == .start(enabled: true) && !c.awaitingResults)
+        await c.startMatch()
+        #expect(mock.calls.contains("startMatch:c2") && c.selectedControl?.state == .live && c.controlButton == .stop && c.controlMessage == nil)
+        await c.stopMatch()
+        #expect(c.selectedControl?.state == .ended && c.controlButton == .none && c.awaitingResults && c.stoppedAt != nil)
+        // 409: the message is shown, the button keeps following control.state
+        await c.stopMatch()
+        #expect(c.controlMessage == "Can't stop Match 2: it is ended." && c.selectedControl?.state == .ended && c.controlButton == .none)
+    }
+    @Test func lockedMatchCannotStartAndConflictMessageIsShown() async {
+        let (c, mock) = make()
+        await c.refreshMatches()
+        c.select(c.matches[0])                      // locked
+        #expect(c.controlButton == .start(enabled: false) && c.selectedControl?.reason?.contains("12/16") == true)
+        mock.controlConflict = "Registration is open until 10:30 PM."
+        await c.startMatch()
+        #expect(c.controlMessage == "Registration is open until 10:30 PM." && c.controlButton == .start(enabled: false))
+    }
+    @Test func legacyMatchAllowsEverything() async {
+        let mock = MockBroadcastLinkService(account: ABGAccount(name: "A", org: nil))
+        let c = ABGController(service: mock, startPresence: false)
+        await c.refreshMatches()
+        c.select(c.matches[1])
+        #expect(c.selectedControl == nil && c.controlButton == .start(enabled: true))
+        await c.startMatch()
+        #expect(c.selectedControl?.state == .live && c.controlButton == .stop)
+    }
+    @Test func liveBodyUpdatesControlAndAutoCapture() async {
+        let (c, _) = make()
+        await c.refreshMatches()
+        c.select(c.matches[1])
+        c.ingestLive(Data(#"{"match":{"id":"OTHER"},"control":{"state":"published"}}"#.utf8))
+        #expect(c.selectedControl?.state == .ready)                         // another match's answer is ignored
+        c.ingestLive(Data(#"{"match":{"id":"c2"},"control":{"state":"live"},"autoCapture":{"paused":true,"lastError":"Too dark"}}"#.utf8))
+        #expect(c.selectedControl?.state == .live && c.liveAutoCapture?.paused == true && c.liveAutoCapture?.lastError == "Too dark")
+        c.clearSelection()
+        #expect(c.selectedControl == nil && c.liveAutoCapture == nil)
+    }
+    @Test func listPollEvery30sAndWhenTheCountdownEnds() async {
+        let (c, mock) = make()
+        let now = Date()
+        #expect(!c.listRefreshDue(now: now))                                // never loaded, no match picked, picker closed
+        c.showMatches = true
+        #expect(c.listRefreshDue(now: now))
+        await c.refreshMatches(); c.showMatches = false
+        let loaded = c.matchesLoadedAt!
+        #expect(!c.listRefreshDue(now: loaded.addingTimeInterval(10)))      // nothing picked yet
+        c.select(c.matches[1])
+        #expect(!c.listRefreshDue(now: loaded.addingTimeInterval(29)) && c.listRefreshDue(now: loaded.addingTimeInterval(30)))
+    }
+    @Test func countdownReachingZeroRefreshesTheList() async {
+        let (c, mock) = make()
+        let base = Date()
+        mock.matchList[0].control?.unlocksAt = ISO8601DateFormatter().string(from: base.addingTimeInterval(100))
+        await c.refreshMatches()                                            // nothing picked, picker closed: only the countdown rule
+        let l = c.matchesLoadedAt!
+        #expect(!c.listRefreshDue(now: l.addingTimeInterval(50)))
+        #expect(c.listRefreshDue(now: base.addingTimeInterval(101)))
+    }
+}

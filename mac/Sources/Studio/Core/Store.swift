@@ -26,7 +26,17 @@ struct StudioSettings: Codable, Hashable { var name: String? = nil; var slateTex
     /// additive (Output/Engine): video bitrate (kbps), HEVC local recording, "Vivid" final-pass enhancement (VividLevel raw value; nil = subtle)
     var videoKbps: Int? = nil
     var recordHEVC: Bool? = nil
-    var vivid: Int? = nil }
+    var vivid: Int? = nil
+    /// additive: set once the starter scenes were seeded, so deleting every scene leaves the studio empty instead of re-seeding
+    var scenesSeeded: Bool? = nil
+    /// additive (AirBattleground auto capture): chosen scenes and intervals of the Capture tab
+    var autoCapture: AutoCaptureSettings? = nil
+    /// additive (Match journey): "Auto-follow match" on the Studio page
+    var journeyAutoFollow: Bool? = nil
+    /// additive: press Start automatically 72 s after the match start time if it is still waiting (nil = on)
+    var autoStartMatch: Bool? = nil
+    /// additive (AirBattleground): YouTube thumbnail source + "Set automatically when going live"
+    var youtubeThumbnail: ThumbnailSettings? = nil }
 
 struct StoreDoc: Codable {
     var devices: [StoredDevice] = []
@@ -36,6 +46,11 @@ struct StoreDoc: Codable {
     var props: [StoredProp] = []
     var settings = StudioSettings()
     var activeShowId: String? = nil
+    /// additive (Scene builder): layer-based scenes. A layer scene with the same id as an old `scenes` entry replaces it.
+    var layerScenes: [LayerScene] = []
+    /// additive (Studio presets, Core/Presets.swift): named scene sets + journey mapping; the active one is streamed
+    var presets: [StudioPreset] = []
+    var activePresetId: String? = nil
     init() {}
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
@@ -46,6 +61,9 @@ struct StoreDoc: Codable {
         props = (try? c.decode([StoredProp].self, forKey: .props)) ?? []
         settings = (try? c.decode(StudioSettings.self, forKey: .settings)) ?? StudioSettings()
         activeShowId = (try? c.decodeIfPresent(String.self, forKey: .activeShowId)) ?? nil
+        layerScenes = (try? c.decode([LayerScene].self, forKey: .layerScenes)) ?? []
+        presets = (try? c.decode([StudioPreset].self, forKey: .presets)) ?? []
+        activePresetId = (try? c.decodeIfPresent(String.self, forKey: .activePresetId)) ?? nil
     }
 }
 
@@ -121,7 +139,24 @@ final class StudioStore: ObservableObject, @unchecked Sendable {
     func removeDestination(_ id: String) { update { $0.destinations.removeAll { $0.id == id } } }
     // scenes
     func upsert(_ s: Scene) { update { doc in if let i = doc.scenes.firstIndex(where: { $0.id == s.id }) { doc.scenes[i] = s } else { doc.scenes.append(s) } } }
-    func removeScene(_ id: String) { update { $0.scenes.removeAll { $0.id == id } } }
+    func removeScene(_ id: String) { update { $0.scenes.removeAll { $0.id == id }; $0.layerScenes.removeAll { $0.id == id }; for i in $0.presets.indices { $0.presets[i].removeScene(id) } } }
+    // layer scenes (old scenes are migrated on the fly until the user edits them)
+    var layerScenes: [LayerScene] { snapshot.layerScenes }
+    /// Every scene as a LayerScene, in the old scenes' order followed by native layer scenes.
+    var allLayerScenes: [LayerScene] {
+        let doc = snapshot
+        var out: [LayerScene] = doc.scenes.map { old in doc.layerScenes.first { $0.id == old.id } ?? LayerScene.migrate(old) }
+        out.append(contentsOf: doc.layerScenes.filter { n in !doc.scenes.contains { $0.id == n.id } })
+        return out
+    }
+    func layerScene(_ id: String) -> LayerScene? {
+        let doc = snapshot
+        if let n = doc.layerScenes.first(where: { $0.id == id }) { return n }
+        return doc.scenes.first { $0.id == id }.map { LayerScene.migrate($0) }
+    }
+    func upsert(_ s: LayerScene) { update { doc in if let i = doc.layerScenes.firstIndex(where: { $0.id == s.id }) { doc.layerScenes[i] = s } else { doc.layerScenes.append(s) } } }
+    func markScenesSeeded() { update { $0.settings.scenesSeeded = true } }
+    func removeLayerScene(_ id: String) { update { doc in doc.layerScenes.removeAll { $0.id == id }; doc.scenes.removeAll { $0.id == id }; for i in doc.presets.indices { doc.presets[i].removeScene(id) } } }
     // shows
     func upsert(_ s: StudioShow) { update { doc in if let i = doc.shows.firstIndex(where: { $0.id == s.id }) { doc.shows[i] = s } else { doc.shows.append(s) } } }
     func removeShow(_ id: String) { update { $0.shows.removeAll { $0.id == id } } }

@@ -105,11 +105,14 @@ final class RealServices: StudioServices {
 
     init(ingest: IngestService) {
         self.ingest = ingest
-        if store.scenes.isEmpty { for s in defaultScenes(firstDeviceId: store.devices.first?.id) { store.upsert(s) } }
+        BuiltinAssets.prewarm()
+        Self.seedOrMigrate(store: ingest.store)
         let show = ingest.store.ensureActiveShow()
         showId = show.id; overlays = show.overlays; engine.setOverlays(show.overlays)
         let st = ingest.store
         engine.setPropResolver { st.propURL($0) }
+        LayerFactory.isVideoProp = { id in st.propURL(id).map(isVideoFile) ?? false }
+        LayerSceneRepository.shared.onSave = { [weak self] sc in Task { @MainActor in await self?.saveLayerScene(sc) } }
         OverlayPropCatalog.imageProps = { st.props.filter { $0.kind == .image }.map { ($0.id, $0.name) } }
         engine.onProgramFrameTimed = { [programBox] pb, t, i in programBox.setTimed(pb, t, i) }
         engine.onPreviewPreview = { [previewBox] in previewBox.set($0) }
@@ -122,7 +125,7 @@ final class RealServices: StudioServices {
         ingest.sourceProvider.phoneAudio = { key, l, r in mx.push(id: key, left: l, right: r) }
         ingest.start()
         if !engine.start(fps: Double(defaultFPS), sink: output, provider: ingest.sourceProvider) { lastError = "Could not start the Metal compositor" }
-        let sc = store.scenes
+        let sc = store.allLayerScenes
         if let first = sc.first { programSceneID = first.id; engine.setProgram(first, fade: false) }
         if let second = sc.dropFirst().first ?? sc.first { previewSceneID = second.id; engine.setPreview(second) }
         let dm = ingest.devices
@@ -131,10 +134,34 @@ final class RealServices: StudioServices {
                 let s = await dm.statuses()
                 self?.statuses = s
                 self?.pushTransforms()
+                self?.updateDefaultDevice(s)
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
             }
         }
     }
+
+    /// First run: the Battleground Pro starter scenes (phones assigned in order, Facecam = this Mac's camera). Existing installs: every old
+    /// fixed-layout scene is copied once into a layer scene (the editor's saved version when there is one); the old entries stay as a backup.
+    static func seedOrMigrate(store: StudioStore) {
+        let doc = store.snapshot
+        if doc.scenes.isEmpty && doc.layerScenes.isEmpty {
+            // only a brand-new studio gets starter scenes; an operator who deleted every scene keeps an empty studio
+            if doc.settings.scenesSeeded != true {
+                for s in StarterScenes.make(deviceIDs: store.devices.map(\.id)) { store.upsert(s) }
+            }
+            store.markScenesSeeded()
+            return
+        }
+        if doc.settings.scenesSeeded != true { store.markScenesSeeded() }
+        for old in doc.scenes where !doc.layerScenes.contains(where: { $0.id == old.id }) {
+            var l = LayerSceneRepository.shared.load(old.id) ?? LayerScene.migrate(old)
+            l.id = old.id; l.name = old.name
+            store.upsert(l)
+        }
+    }
+    private(set) var layerSceneRevision = 1
+    private var killCount = 0, lastKill = Date.distantPast
+    private var countdownTask: Task<Void, Never>?
 
     func setStudioName(_ n: String) async throws {
         let t = n.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -162,6 +189,7 @@ final class RealServices: StudioServices {
         do {
             let r = try ingest.devices.create(name: name)
             statuses = await ingest.devices.statuses()
+            autoAssignSources()
             return PairingInfo(device: DeviceInfo(id: r.device.id, name: r.device.name), pairURL: r.pairURL, key: r.key)
         } catch let e as APIError { throw ServiceError(message: e.message) }
     }
@@ -170,25 +198,119 @@ final class RealServices: StudioServices {
         statuses.removeAll { $0.id == id }
     }
 
-    func scenes() -> [Scene] { store.scenes }
+    /// Old scenes plus native layer scenes (those appear as empty full-frame entries so the existing scene lists / take buttons can address them by id).
+    func scenes() -> [Scene] {
+        let doc = store.snapshot
+        return doc.scenes + doc.layerScenes.filter { n in !doc.scenes.contains { $0.id == n.id } }.map { Scene(id: $0.id, name: $0.name, layout: .full, slots: []) }
+    }
     func saveScene(_ s: Scene) async {
+        // a legacy record only names / creates the scene: native layer content (same id) is kept
+        let existing = store.layerScene(s.id)
         store.upsert(s)
-        if s.id == programSceneID { engine.setProgram(s, fade: false) }
-        if s.id == previewSceneID { engine.setPreview(s) }
+        if var l = store.snapshot.layerScenes.first(where: { $0.id == s.id }) { l.name = s.name; store.upsert(l) }
+        else if existing == nil { store.upsert(LayerScene.migrate(s)) }
+        layerSceneRevision += 1
+        if let l = store.layerScene(s.id) { pushLive(l) }
     }
     func deleteScene(id: String) async {
         store.removeScene(id)
-        if previewSceneID == id { previewSceneID = store.scenes.first?.id; engine.setPreview(store.scenes.first) }
-        if programSceneID == id { programSceneID = store.scenes.first?.id; engine.setProgram(store.scenes.first, fade: false) }
+        layerSceneRevision += 1
+        let first = store.allLayerScenes.first
+        if previewSceneID == id { previewSceneID = first?.id; engine.setPreview(first) }
+        if programSceneID == id { programSceneID = first?.id; engine.setProgram(first, fade: false) }
     }
     func setPreview(sceneID: String) {
-        guard let s = store.scenes.first(where: { $0.id == sceneID }) else { return }
+        guard let s = store.layerScene(sceneID) else { return }
         previewSceneID = sceneID; engine.setPreview(s)
     }
     func take(_ t: TransitionKind) {
         guard let id = previewSceneID else { return }
-        if t == .cut { engine.cut() } else { engine.take() }
-        programSceneID = id
+        takeScene(id: id, t)
+    }
+    func takeScene(id: String, _ t: TransitionKind) {
+        guard let s = store.layerScene(id) else { return }
+        // a fresh take restarts the scene's video props (countdowns, intros) from their first frame
+        if programSceneID != id { ingest.sourceProvider.restartVideos(engine.playableVideos(s).sourceRefs) }
+        previewSceneID = id; programSceneID = id
+        engine.setPreview(s)
+        engine.setProgram(s, fade: t != .cut)
+    }
+    /// Unassigned phone slots (built-in presets) show the live phone: keep the current one while it streams, else the
+    /// first phone with video, else the first streaming one. Re-applies the scenes on Program / Preview when it changes.
+    private func updateDefaultDevice(_ s: [DeviceStatus]) {
+        let live = s.filter(\.streaming)
+        let current = live.first { $0.id == defaultDeviceId }
+        let pick = current ?? live.first(where: \.videoReady) ?? live.first
+        guard pick?.id != defaultDeviceId, let id = pick?.id else { return }
+        defaultDeviceId = id
+        if engine.setDefaultDevice(id) {
+            for sid in [programSceneID, previewSceneID].compactMap({ $0 }) { if let l = store.layerScene(sid) { engine.replaceLive(l) } }
+        }
+    }
+    private var defaultDeviceId: String?
+    func isOnAir(sceneID: String) -> Bool { programSceneID == sceneID }
+    func cutToBlack() { programSceneID = nil; engine.setProgram(nil as LayerScene?, fade: false) }
+    func pushLive(_ s: LayerScene) { engine.replaceLive(s) }
+
+    // Layer scenes (scene builder)
+    func layerScenes() -> [LayerScene] { store.allLayerScenes }
+    func saveLayerScene(_ s: LayerScene) async {
+        store.upsert(s)
+        layerSceneRevision += 1
+        engine.replaceLive(s)
+    }
+    func deleteLayerScene(id: String) async { await deleteScene(id: id) }
+    func renderStill(_ s: LayerScene, size: CGSize) -> CGImage? { engine.renderStill(s, size: size, variables: SceneVariables(), time: 4) }
+    func stillRenderer() -> StillRenderer { { [engine] s, size, vars, t, clock in engine.renderStill(s, size: size, variables: vars, time: t, clock: clock) } }
+    func captureRenderer() -> CaptureRenderer {
+        // clock nil = entrance animations finished (titles fully shown); loops / tickers at the current time; the live compositor's sources
+        { [engine] s, size in engine.renderStill(s, size: size, variables: engine.sceneVariables, time: CACurrentMediaTime(), clock: nil) }
+    }
+    func liveSceneVariables() -> SceneVariables { engine.sceneVariables }
+    func setSceneVariables(_ v: [String: String]) {
+        // the 10 s "Countdown" trigger owns {{countdown}} while it runs (the match countdown uses the same key)
+        var v = v
+        if Date() < triggerCountdownUntil { v.removeValue(forKey: StudioTriggers.countdownKey) }
+        engine.setSceneVariables(v)
+    }
+    private var triggerCountdownUntil = Date.distantPast
+
+    // MARK: triggers
+    private var triggerTheme: PropTheme {
+        guard let id = programSceneID, let s = store.layerScene(id) else { return .ember }
+        var found: PropTheme?
+        s.forEachLayer { l in if found == nil, case .image(let i) = l.kind, let t = i.theme { found = PropTheme.named(t) } }
+        return found ?? .ember
+    }
+    func replayProgram() { engine.replayProgram() }
+    func fireTrigger(_ id: String) {
+        if id == "kill" || id == "headshot" {
+            if Date().timeIntervalSince(lastKill) > 12 { killCount = 0 }
+            killCount += 1; lastKill = Date()
+            engine.setSceneVariable(StudioTriggers.killCountKey, "\(killCount)")
+        }
+        if id == "countdown" {
+            triggerCountdownUntil = Date().addingTimeInterval(12)
+            countdownTask?.cancel()
+            let eng = engine
+            countdownTask = Task {
+                for n in stride(from: 10, through: 0, by: -1) {
+                    eng.setSceneVariable(StudioTriggers.countdownKey, n == 0 ? "GO" : "\(n)")
+                    if n == 10 { eng.clearTriggers(); if let t = StudioTriggers.make("countdown", theme: await MainActor.run { self.triggerTheme }) { eng.fire(t) } }
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    if Task.isCancelled { return }
+                }
+            }
+            return
+        }
+        if let t = StudioTriggers.make(id, theme: triggerTheme) { engine.fire(t) }
+    }
+    func resetKillStreak() { killCount = 0; engine.setSceneVariable(StudioTriggers.killCountKey, "0") }
+    func autoAssignSources() {
+        let ids = store.devices.map(\.id)
+        for var s in store.allLayerScenes where s.variableDefaults[StarterScenes.autoKey] == "1" {
+            if StarterScenes.assign(&s, deviceIDs: ids) { store.upsert(s); layerSceneRevision += 1; engine.replaceLive(s) }
+        }
     }
 
     func destinations() -> [Destination] { store.destinations }

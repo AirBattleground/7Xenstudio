@@ -11,9 +11,11 @@ struct ABGMatch: Identifiable, Equatable, Hashable, Sendable {
     var id: String, title: String, subtitle: String
     var startsAt: String?
     var status: Status
+    /// Studio match control (new contract). nil = legacy server: everything allowed as before.
+    var control: MatchControl? = nil
 }
 extension ABGMatch: Decodable {
-    private enum K: String, CodingKey { case id, title, subtitle, startsAt, status }
+    private enum K: String, CodingKey { case id, title, subtitle, startsAt, status, control }
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: K.self)
         id = try c.decodeFlexibleString(.id)
@@ -21,6 +23,7 @@ extension ABGMatch: Decodable {
         subtitle = ((try? c.decodeIfPresent(String.self, forKey: .subtitle)) ?? nil) ?? ""
         startsAt = (try? c.decodeIfPresent(String.self, forKey: .startsAt)) ?? nil
         status = ((try? c.decodeIfPresent(Status.self, forKey: .status)) ?? nil) ?? .upcoming
+        control = (try? c.decodeIfPresent(MatchControl.self, forKey: .control)) ?? nil
     }
 }
 
@@ -108,8 +111,14 @@ struct ShowLink: Codable, Hashable, Sendable {
 enum ABGError: LocalizedError, Equatable {
     case notConnected, invalidLink, unreachable, keyInvalid, api(String), http(Int), badResponse
     case noMatch, noYouTube, noStreamKey
+    /// 409 CONFLICT: the server's message, shown to the operator as is
+    case conflict(String)
+    /// 404 on a match call: the match is gone (pick it again)
+    case matchNotFound(String?)
     var errorDescription: String? {
         switch self {
+        case .conflict(let m): m
+        case .matchNotFound(let m): "Match not found on AirBattleground. Pick the match again." + (m.map { " (\($0))" } ?? "")
         case .notConnected: "Connect AirBattleground first."
         case .invalidLink: "That isn't an AirBattleground studio link. Scan the QR again or paste the key (it starts with sw_)."
         case .unreachable: "Can't reach AirBattleground. Check the internet connection."

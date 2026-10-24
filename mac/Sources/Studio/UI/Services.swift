@@ -3,6 +3,7 @@
 import Foundation
 import CoreGraphics
 import CoreVideo
+import QuartzCore
 
 struct DeviceInfo: Identifiable, Hashable {
     var id: String
@@ -94,6 +95,7 @@ struct StudioStats: Equatable {
 }
 struct OutputHealth: Identifiable, Hashable { var id: String; var name: String; var ok: Bool; var error: String? = nil }
 
+typealias StillRenderer = @Sendable (LayerScene, CGSize, SceneVariables, Double, AnimClock?) -> CGImage?
 enum MonitorKind { case program, preview }
 enum TransitionKind: String, CaseIterable { case cut = "Cut", fade = "Fade" }
 
@@ -168,10 +170,56 @@ protocol StudioServices: AnyObject {
     var recordHEVC: Bool { get set }
     /// additive: the Core store, for integrations that persist (nil in the mock backend)
     var integrationStore: StudioStore? { get }
+    /// additive (layer scenes): all scenes as layer scenes, save / delete, still render for thumbnails, live {{variables}}
+    func layerScenes() -> [LayerScene]
+    func saveLayerScene(_ s: LayerScene) async
+    func deleteLayerScene(id: String) async
+    func renderStill(_ s: LayerScene, size: CGSize) -> CGImage?
+    /// Thread-safe still renderer for background work (thumbnails, the editor canvas): scene, size, variables, time, animation clock (nil = animations at rest).
+    func stillRenderer() -> StillRenderer
+    /// additive (auto capture): renders a scene as it looks on air right now (live sources, live {{variables}}, loops at the current time). Thread-safe.
+    func captureRenderer() -> CaptureRenderer
+    /// additive (YouTube thumbnail): the {{variables}} the engine shows right now.
+    func liveSceneVariables() -> SceneVariables
+    /// Bumped whenever any layer scene is saved / deleted / migrated, so cached thumbnails and subtitles can refresh.
+    var layerSceneRevision: Int { get }
+    func setSceneVariables(_ v: [String: String])
+    /// Editor live update: swap the scene on Program / Preview without restarting its animations (no persistence).
+    func pushLive(_ s: LayerScene)
+    func isOnAir(sceneID: String) -> Bool
+    /// Take a scene straight to Program with its own transition (`.cut` forces a hard cut).
+    func takeScene(id: String, _ t: TransitionKind)
+    /// additive (scene delete): program goes to black (no scene), e.g. before deleting the on-air scene.
+    func cutToBlack()
+    /// One-shot on-air animations (kill pop-up, flash, ...).
+    func fireTrigger(_ id: String)
+    /// Replays the program scene from its first frame (looping pre-show stinger).
+    func replayProgram()
+    func resetKillStreak()
+    /// Phones were added or removed: fill empty phone slots of the starter scenes.
+    func autoAssignSources()
     func shutdown() async
 }
 
 extension StudioServices {
+    // Layer scenes (additive; mock backend migrates the old scenes)
+    func layerScenes() -> [LayerScene] { scenes().map { LayerScene.migrate($0) } }
+    func saveLayerScene(_ s: LayerScene) async {}
+    func deleteLayerScene(id: String) async {}
+    func renderStill(_ s: LayerScene, size: CGSize) -> CGImage? { StudioEngine.shared.renderStill(s, size: size) }
+    func stillRenderer() -> StillRenderer { { s, size, vars, t, clock in StudioEngine.shared.renderStill(s, size: size, variables: vars, time: t, clock: clock) } }
+    func captureRenderer() -> CaptureRenderer { { s, size in StudioEngine.shared.renderStill(s, size: size, time: CACurrentMediaTime()) } }
+    var layerSceneRevision: Int { 0 }
+    func liveSceneVariables() -> SceneVariables { SceneVariables() }
+    func pushLive(_ s: LayerScene) {}
+    func isOnAir(sceneID: String) -> Bool { programSceneID == sceneID }
+    func takeScene(id: String, _ t: TransitionKind) { setPreview(sceneID: id); take(t) }
+    func cutToBlack() {}
+    func fireTrigger(_ id: String) {}
+    func replayProgram() {}
+    func resetKillStreak() {}
+    func autoAssignSources() {}
+    func setSceneVariables(_ v: [String: String]) {}
     func goLive(record: Bool, destinationIDs: [String], extraDestinations: [Destination]) async throws { try await goLive(record: record, destinationIDs: destinationIDs) }
     var integrationStore: StudioStore? { nil }
     func frameSerial(_ m: MonitorKind) -> UInt64 { 0 }

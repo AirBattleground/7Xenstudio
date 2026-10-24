@@ -7,6 +7,8 @@ import AVFoundation
 import CoreMedia
 import os
 
+/// `clip`: latched ~1.5 s after the channel's pre-fader input reached -0.5 dBFS or its post-fader level hit 0 dBFS (input guard
+/// limiting); on the master, after the bus reached 0 dBFS before the limiter.
 struct ChannelMeter: Equatable { var peak: Float = 0, rms: Float = 0, clip = false }
 struct MixerMeters {
     var master = ChannelMeter()
@@ -47,6 +49,7 @@ final class AudioInput {
 
     // render-thread state
     var hp = HighPass(), speech = SpeechDetector(), gate = NoiseGate(), comp = Compressor(), lim = Limiter()
+    var guardLim = InputGuard()             // post-fader safety limiter: one hot source cannot slam the master
     var delay = DelayLine(), ctlDelay = MonoDelay()
     var denoise: SpectralDenoiser?
     var faderGain: Float = -1, talkGain: Float = 0
@@ -223,7 +226,9 @@ final class AudioMixer {
             mFormatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked, mBytesPerPacket: 8, mFramesPerPacket: 1,
             mBytesPerFrame: 8, mChannelsPerFrame: 2, mBitsPerChannel: 32, mReserved: 0)
         CMAudioFormatDescriptionCreate(allocator: nil, asbd: &asbd, layoutSize: 0, layout: nil, magicCookieSize: 0, magicCookie: nil, extensions: nil, formatDescriptionOut: &outFormat)
-        masterLimiter.ceilingDb = -1.0          // sample + inter-sample peaks stay at/below -1 dBFS (AAC overshoots a 0 dBFS master)
+        // true peak (4x oversampled) <= -2 dBTP: AAC-LC 192k overshoots dense, hard-limited programme by up to ~1.2 dB (measured), so
+        // the decoded recording / stream stays at or below about -0.7 dBFS
+        masterLimiter.ceilingDb = -2.0
         addSource(id: AudioMixer.micID, followsProgram: false, active: true)
     }
 
@@ -417,6 +422,8 @@ final class AudioMixer {
                 continue
             }
             inp.pull(l, r, n)
+            var micIn: Float = 0
+            for i in 0..<n { micIn = max(micIn, abs(l[i]), abs(r[i])) }
             ctl.withUnsafeMutableBufferPointer { cp in
                 let c = cp.baseAddress!
                 if v.hpfOn { inp.hp.configure(cutoff: v.hpfHz); inp.hp.process(l, r, n) }
@@ -453,14 +460,13 @@ final class AudioMixer {
             gateOpen = max(gateOpen, inp.gate.smoothedOpen); compGR = max(compGR, inp.comp.lastReductionDb)
             let fT: Float = (ch.mute ? 0 : AudioMath.dbToLinear(ch.gainDb)) * inp.trim
             if inp.faderGain < 0 { inp.faderGain = fT }
-            for i in 0..<n {
-                let g = rampGain(inp.faderGain, fT, i, n)
-                l[i] *= g; r[i] *= g
-                progL[i] += l[i]; progR[i] += r[i]; micPostL[i] += l[i]; micPostR[i] += r[i]
-            }
+            for i in 0..<n { let g = rampGain(inp.faderGain, fT, i, n); l[i] *= g; r[i] *= g }
             inp.faderGain = fT
+            let micPost = inp.guardLim.process(l, r, n)
+            for i in 0..<n { progL[i] += l[i]; progR[i] += r[i]; micPostL[i] += l[i]; micPostR[i] += r[i] }
             inp.meter.update(l, r, n)
-            chMeters[inp.id] = ChannelMeter(peak: inp.meter.peak, rms: inp.meter.rms, clip: inp.meter.clipped)
+            inp.meter.flagClip(micIn >= MeterState.clipThreshold || micPost >= 1, n)
+            chMeters[inp.id] = ChannelMeter(peak: inp.meter.peak, rms: inp.meter.rms, clip: inp.meter.clipLatched)
             if ch.solo { for i in 0..<n { soloL[i] += sideL[i]; soloR[i] += sideR[i] } }
         }
 
@@ -490,6 +496,8 @@ final class AudioMixer {
             let phoneMs = inp.id.hasPrefix("device:") ? s.phoneLatencyMs : 0         // phones arrive near-live, the picture ~100 ms later
             inp.delay.process(l, r, n, delay: AudioMath.msToFrames(ch.delayMs + phoneMs))
             if ch.solo { for i in 0..<n { soloL[i] += l[i]; soloR[i] += r[i] } }       // PFL: pre-fader, pre-duck
+            var preFader: Float = 0
+            for i in 0..<n { preFader = max(preFader, abs(l[i]), abs(r[i])) }
             let fT: Float = inp.active ? (ch.mute ? 0 : AudioMath.dbToLinear(ch.gainDb)) * inp.trim : 0
             if inp.faderGain < 0 { inp.faderGain = fT }
             if crossfade > 0, inp.faderGain != fT {
@@ -501,19 +509,18 @@ final class AudioMixer {
                     g0 = fT > g0 ? min(fT, g0 + step) : max(fT, g0 - step)
                     let g = g0 * duckG[i]
                     l[i] *= g; r[i] *= g
-                    progL[i] += l[i]; progR[i] += r[i]; monL[i] += l[i]; monR[i] += r[i]
                 }
                 inp.faderGain = g0
             } else {
-                for i in 0..<n {
-                    let g = rampGain(inp.faderGain, fT, i, n) * duckG[i]
-                    l[i] *= g; r[i] *= g
-                    progL[i] += l[i]; progR[i] += r[i]; monL[i] += l[i]; monR[i] += r[i]
-                }
+                for i in 0..<n { let g = rampGain(inp.faderGain, fT, i, n) * duckG[i]; l[i] *= g; r[i] *= g }
                 inp.faderGain = fT
             }
+            // post-fader safety limiter (unity below -3 dBFS), then onto the buses
+            let postFader = inp.guardLim.process(l, r, n)
+            for i in 0..<n { progL[i] += l[i]; progR[i] += r[i]; monL[i] += l[i]; monR[i] += r[i] }
             inp.meter.update(l, r, n)
-            chMeters[inp.id] = ChannelMeter(peak: inp.meter.peak, rms: inp.meter.rms, clip: inp.meter.clipped)
+            inp.meter.flagClip((inp.active && preFader >= MeterState.clipThreshold) || postFader >= 1, n)
+            chMeters[inp.id] = ChannelMeter(peak: inp.meter.peak, rms: inp.meter.rms, clip: inp.meter.clipLatched)
         }
         } }
 
@@ -521,8 +528,11 @@ final class AudioMixer {
         for i in 0..<n { progL[i] *= mg[i]; progR[i] *= mg[i] }
         progL.withUnsafeMutableBufferPointer { pl in progR.withUnsafeMutableBufferPointer { pr in
             if s.masterHpfOn { masterHP.configure(cutoff: s.masterHpfHz); masterHP.process(pl.baseAddress!, pr.baseAddress!, n) }
+            var bus: Float = 0
+            for i in 0..<n { bus = max(bus, abs(pl[i]), abs(pr[i])) }
             masterLimiter.process(pl.baseAddress!, pr.baseAddress!, n)
             masterMeter.update(pl.baseAddress!, pr.baseAddress!, n)
+            masterMeter.flagClip(bus >= 1, n)
         } }
 
         // 5) headphone feed
@@ -543,7 +553,7 @@ final class AudioMixer {
 
         stateLock.withLock {
             _peak = masterMeter.peak
-            _meters = MixerMeters(master: ChannelMeter(peak: masterMeter.peak, rms: masterMeter.rms, clip: masterMeter.clipped),
+            _meters = MixerMeters(master: ChannelMeter(peak: masterMeter.peak, rms: masterMeter.rms, clip: masterMeter.clipLatched),
                                   channels: chMeters, gateOpen: gateOpen, duckDb: ducker.currentDb, compReductionDb: compGR, micLive: live,
                                   micDenoiseDb: micDenoiseDb, micLearning: micLearning, micProfile: micProfile)
         }

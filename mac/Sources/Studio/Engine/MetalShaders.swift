@@ -1,6 +1,7 @@
 // Metal shading language source, compiled at runtime (Command Line Tools ship no offline metal compiler).
 // Colour pipeline: source (YCbCr BT.601/709, video/full range, or BGRA) -> R'G'B' -> BT.709 inverse OETF -> LINEAR rgba16f
-// canvas (all blending happens in linear light) -> BT.709 OETF -> BGRA8 output tagged BT.709.
+// scaling in linear light; layers are encoded to BT.709 when drawn and composited in encoded space (Photoshop / After Effects look)
+// -> BGRA8 output tagged BT.709.
 let metalShaderSource = #"""
 #include <metal_stdlib>
 using namespace metal;
@@ -120,14 +121,14 @@ fragment float4 fsSlot(VOut in [[stage_in]], constant QuadU& u [[buffer(0)]],
     float3 rgb;
     if (kind == 0) rgb = clamp(t.sample(linSamp, in.uv).rgb, 0.0, 1.0);
     else if (kind == 4) rgb = clamp(upscale(t, in.uv, u.c0.x), 0.0, 1.0);
-    else if (kind == 1) rgb = lin709(u.c0.rgb);
+    else if (kind == 1) rgb = u.c0.rgb;
     else if (kind == 2) {
         float tt = clamp((pos.x * u.q.x + pos.y * u.q.y) / (u.q.x * u.q.x + u.q.y * u.q.y), 0.0, 1.0);
-        rgb = lin709(mix(u.c0.rgb, u.c1.rgb, tt));
+        rgb = mix(u.c0.rgb, u.c1.rgb, tt);
     } else {
         float2 ctr = u.rect.xy + u.rect.zw * 0.5;
         float tt = clamp((length(pos - ctr) - u.q.z) / (u.q.w - u.q.z), 0.0, 1.0);
-        rgb = lin709(mix(u.c0.rgb, u.c1.rgb, tt));
+        rgb = mix(u.c0.rgb, u.c1.rgb, tt);
     }
     float cov = 1.0;
     if (u.p.y > 0.0) {
@@ -138,7 +139,7 @@ fragment float4 fsSlot(VOut in [[stage_in]], constant QuadU& u [[buffer(0)]],
         cov = clamp(0.5 - d, 0.0, 1.0);
         if (u.p.z > 0.0) {
             float ring = clamp(d + u.p.z + 0.5, 0.0, 1.0) * 0.55;
-            rgb = mix(rgb, lin709(float3(45.0, 212.0, 196.0) / 255.0), ring);
+            rgb = mix(rgb, float3(45.0, 212.0, 196.0) / 255.0, ring);
         }
     }
     float a = cov * u.p.w;
@@ -149,7 +150,7 @@ fragment float4 fsSprite(VOut in [[stage_in]], constant QuadU& u [[buffer(0)]], 
     float4 c = t.sample(linSamp, in.uv);          // premultiplied, BT.709-encoded
     float3 rgb = c.a > 0.0 ? c.rgb / c.a : float3(0.0);
     float a = c.a * u.p.w;
-    return float4(lin709(rgb) * a, a);
+    return float4(rgb * a, a);
 }
 
 fragment float4 fsMix(VOut in [[stage_in]], texture2d<float> a [[texture(0)]], texture2d<float> b [[texture(1)]],
@@ -167,7 +168,7 @@ fragment float4 fsOut(VOut in [[stage_in]], texture2d<float> c [[texture(0)]], c
         float3 lo = min(min(min(a, b), min(d, e)), l), hi = max(max(max(a, b), max(d, e)), l);
         l = clamp(l + vu.v.z * (l - blur), lo, hi);
     }
-    float3 e = enc709(l);
+    float3 e = clamp(l, 0.0, 1.0);          // the canvas already holds encoded (display-referred) values
     if (vu.v.w > 0.5) {
         float y = dot(e, float3(0.2126, 0.7152, 0.0722));
         e = clamp(float3(y) + (e - float3(y)) * vu.v.x, 0.0, 1.0);          // saturation around luma (encoded domain)

@@ -28,7 +28,8 @@ import AVFoundation
         #expect(a.contains("copy")); #expect(!a.contains("libx264"))
         #expect(labels == ["YT"])
         let tee = a.last!
-        #expect(a.contains("+frag_keyframe+empty_moov+default_base_moof"))
+        #expect(a.contains("+frag_keyframe+default_base_moof"))
+        #expect(!a.joined(separator: " ").contains("empty_moov"))          // empty_moov loses the AAC AudioSpecificConfig
         #expect(tee.contains("onfail=ignore"))
         #expect(tee.contains("rtmp://x/live2/KEY"))
     }

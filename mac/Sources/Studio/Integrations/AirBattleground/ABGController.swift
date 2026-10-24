@@ -52,6 +52,23 @@ final class ABGController {
     var showConnect = false
     var showMatches = false
 
+    // MARK: match control (state from the server only)
+    /// control of the picked match from the newest server answer (match list, GET …/live, start / stop)
+    private(set) var liveControl: MatchControl?
+    /// autoCapture block of GET …/live for the picked match
+    private(set) var liveAutoCapture: LiveAutoCapture?
+    private(set) var liveUpdatedAt: Date?
+    /// Start / Stop in progress
+    private(set) var controlBusy = false
+    /// 409 (or other) message of the last Start / Stop; cleared by the next success
+    private(set) var controlMessage: String?
+    /// set by a successful Stop: prompt "Send the results screenshot(s)" (also shown whenever the state is `ended`)
+    private(set) var stoppedAt: Date?
+    /// the start / stop answer (same body as GET …/live): handed to the shared match data store so scenes update at once
+    @ObservationIgnored var onLiveBody: ((Data) -> Void)?
+    /// list poll period while a match is picked or the picker is open
+    @ObservationIgnored var listPollSeconds: Double = 30
+
     /// called when AirBattleground answers a heartbeat with stop: true
     @ObservationIgnored var onRemoteStop: (() -> Void)?
     @ObservationIgnored var statusProvider: () -> ABGHeartbeat = { ABGHeartbeat(state: "starting", fps: nil, bitrateKbps: nil) }
@@ -65,9 +82,10 @@ final class ABGController {
         self.service = service; self.persistence = persistence ?? ABGMemoryPersistence()
         account = service.account; host = service.host
         link = self.persistence.link
-        if startPresence { startPresenceLoop() }
+        if startPresence { startPresenceLoop(); startListPolling() }
     }
-    deinit { heartbeatTask?.cancel(); presenceTask?.cancel() }
+    deinit { heartbeatTask?.cancel(); presenceTask?.cancel(); listTask?.cancel() }
+    @ObservationIgnored private var listTask: Task<Void, Never>?
 
     // MARK: derived
     var selectedTitle: String? { link?.eventTitle }
@@ -116,15 +134,85 @@ final class ABGController {
     func refreshMatches() async {
         guard isConnected else { return }
         matchesLoading = true; defer { matchesLoading = false }
-        do { matches = try await track { try await service.matches() }; matchesError = nil; matchesLoadedAt = Date() }
+        do {
+            matches = try await track { try await service.matches() }; matchesError = nil; matchesLoadedAt = Date()
+            if let m = selectedMatch, let c = m.control { liveControl = c }
+        }
         catch { matchesError = Self.message(error); noteAuthFailure(error) }
     }
     func select(_ m: ABGMatch) {
         let l = ShowLink(integration: Self.integrationId, eventId: m.id, eventTitle: m.title, eventSubtitle: m.subtitle.isEmpty ? nil : m.subtitle,
                          eventStatus: m.status.rawValue, startsAt: m.startsAt)
+        if l.eventId != link?.eventId { resetControl() }
+        liveControl = m.control
         persistence.link = l; link = l
     }
-    func clearSelection() { persistence.link = nil; link = nil }
+    func clearSelection() { persistence.link = nil; link = nil; resetControl() }
+    private func resetControl() { liveControl = nil; liveAutoCapture = nil; liveUpdatedAt = nil; controlMessage = nil; stoppedAt = nil }
+
+    // MARK: match control
+
+    /// The picked match as last listed.
+    var selectedMatch: ABGMatch? { link?.eventId.flatMap { id in matches.first { $0.id == id } } }
+    /// control.state etc. of the picked match (nil = legacy server without control: allow everything).
+    var selectedControl: MatchControl? { liveControl ?? selectedMatch?.control }
+    var controlButton: MatchControlButton {
+        MatchControlButton.make(selectedControl, legacyStatus: selectedMatch?.status ?? link?.eventStatus.flatMap(ABGMatch.Status.init(rawValue:)))
+    }
+    /// "Send the results screenshot(s)" prompt: after Stop, until the manager publishes
+    var awaitingResults: Bool {
+        if let c = selectedControl { return c.state == .ended }
+        return stoppedAt != nil
+    }
+
+    func startMatch() async { await control(start: true) }
+    func stopMatch() async { await control(start: false) }
+    private func control(start: Bool) async {
+        guard let id = link?.eventId, !controlBusy else { return }
+        controlBusy = true; defer { controlBusy = false }
+        do {
+            let body = try await track { try await (start ? service.startMatch(id: id) : service.stopMatch(id: id)) }
+            controlMessage = nil
+            if !start { stoppedAt = Date() }
+            ingestLive(body, matchId: id)
+            onLiveBody?(body)
+            if let c = liveControl, let i = matches.firstIndex(where: { $0.id == id }) { matches[i].control = c }
+        } catch {
+            // keep the button driven by control.state; show the server's words
+            controlMessage = Self.message(error)
+            if case ABGError.conflict = error { Task { await self.refreshMatches() } }
+        }
+    }
+
+    /// A GET …/live (or start / stop) body for the picked match: control + autoCapture blocks. Ignored when it belongs to another match.
+    func ingestLive(_ data: Data, matchId: String? = nil, now: Date = Date()) {
+        guard let b = LiveControlBody.parse(data) else { return }
+        guard let picked = link?.eventId else { return }
+        if let m = b.matchId ?? matchId, m != picked { return }
+        if let c = b.control { liveControl = c }
+        if let a = b.autoCapture { liveAutoCapture = a }
+        liveUpdatedAt = now
+    }
+
+    /// Re-list every 30 s while a match is picked (or the picker is open), and once when a locked countdown reaches 0.
+    func listRefreshDue(now: Date) -> Bool {
+        guard isConnected, !matchesLoading else { return false }
+        let last = matchesLoadedAt ?? .distantPast
+        if (hasMatch || showMatches) && now.timeIntervalSince(last) >= listPollSeconds { return true }
+        let unlocks = matches.compactMap { $0.control?.state == .locked ? $0.control?.unlocksAtDate : nil }
+            + [liveControl?.state == .locked ? liveControl?.unlocksAtDate : nil].compactMap { $0 }
+        return unlocks.contains { $0 <= now && $0 > last }
+    }
+    func startListPolling() {
+        guard listTask == nil else { return }
+        listTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard let self else { return }
+                if self.listRefreshDue(now: Date()) { await self.refreshMatches() }
+            }
+        }
+    }
 
     /// upcoming + live by default, searched by title / subtitle; live first, then by start time
     nonisolated static func filter(_ ms: [ABGMatch], query: String, includeFinished: Bool) -> [ABGMatch] {

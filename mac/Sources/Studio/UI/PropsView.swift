@@ -47,10 +47,9 @@ struct PropRow: View {
                 Text("\(prop.isVideo ? "Video" : "Image") · \(formatBytes(prop.sizeBytes))").font(.caption).foregroundStyle(Theme.muted)
             }
             Spacer()
-            if model.introPropId == prop.id { Chip(text: "Intro", color: Theme.accent, filled: true) }
-            if prop.isVideo {
-                Button(model.introPropId == prop.id ? "Clear intro" : "Use as intro") { model.setIntroProp(model.introPropId == prop.id ? nil : prop.id) }.controlSize(.small)
-            }
+            Button { model.createScene(from: prop); NotificationCenter.default.post(name: .studioShowConsole, object: nil) } label: { Label("Make scene", systemImage: "rectangle.badge.plus") }
+                .buttonStyle(.studio(.primary(Theme.accent), height: 28))
+                .help("Creates a full-screen scene with this \(prop.isVideo ? "video" : "picture") and puts it on Preview (NEXT)")
             Button { model.renameProp(prop, name) } label: { Image(systemName: "checkmark") }.buttonStyle(.borderless).disabled(name == prop.name || name.trimmingCharacters(in: .whitespaces).isEmpty).help("Save name")
             Button { confirmDelete = true } label: { Image(systemName: "trash") }.buttonStyle(.borderless)
         }
@@ -73,8 +72,7 @@ struct PropsView: View {
                     Text("Props").font(.title.bold()); Spacer()
                     Button { openPropsPanel { model.addProps($0) } } label: { Label("Add videos or images…", systemImage: "plus") }
                 }
-                Text("Videos and images you can put in any scene. Drop files here, or use the button. Videos loop.").foregroundStyle(Theme.muted)
-                SlateSettings()
+                Text("Your videos and pictures. Click \"Make scene\" to turn one into a full-screen scene, or use it in the scene editor. Drop files here to upload. Videos loop and play their sound on air.").foregroundStyle(Theme.muted)
                 if model.props.isEmpty {
                     VStack(spacing: 8) {
                         Image(systemName: "photo.on.rectangle.angled").font(.largeTitle).foregroundStyle(Theme.muted)

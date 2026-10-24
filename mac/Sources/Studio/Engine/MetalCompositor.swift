@@ -28,13 +28,26 @@ private let rec2020ToRec709: (SIMD4<Float>, SIMD4<Float>, SIMD4<Float>) = (
     SIMD4<Float>(1.6604910, -0.5876411, -0.0728499, 0), SIMD4<Float>(-0.1245505, 1.1328999, -0.0083494, 0), SIMD4<Float>(-0.0181508, -0.1005789, 1.1187297, 0))
 
 struct FrameRequest {
-    var program: Scene?
+    var program: Scene?           // legacy fixed-layout scene: migrated to layers on the fly
     var previous: Scene?          // outgoing scene while mix < 1
     var mix: Float = 1            // 0 = previous, 1 = program
     var overlays: Overlays?
     var liveSince: Date?
-    var time: Double = 0          // seconds, drives the ticker
+    var time: Double = 0          // seconds, drives the ticker, loops and procedural effects
     var previewScene: Scene?
+    // layer scenes (take precedence over the legacy fields when set)
+    var layerProgram: LayerScene?
+    var layerPrevious: LayerScene?
+    var layerPreview: LayerScene?
+    /// nil = fully shown (animations at rest, loops running on `time`)
+    var programClock: AnimClock?
+    var previousClock: AnimClock?
+    var previewClock: AnimClock?
+    var transition = SceneTransition(.fade)
+    var variables = SceneVariables()
+    /// Transient on-air animations drawn above the program (kill pop-ups, flashes), each with its own clock, plus a screen-shake offset (output pixels).
+    var triggers: [(layers: [Layer], clock: AnimClock)] = []
+    var shake = CGPoint.zero
 }
 struct FrameTargets {
     var output: CVPixelBuffer
@@ -42,7 +55,7 @@ struct FrameTargets {
     var scenePreview: CVPixelBuffer?
 }
 
-private final class TexKey: Hashable {
+final class TexKey: Hashable {
     let w: Int, h: Int, f: UInt
     init(_ w: Int, _ h: Int, _ f: MTLPixelFormat) { self.w = w; self.h = h; self.f = f.rawValue }
     static func == (a: TexKey, b: TexKey) -> Bool { a.w == b.w && a.h == b.h && a.f == b.f }
@@ -50,7 +63,7 @@ private final class TexKey: Hashable {
 }
 
 /// Per in-flight-frame resources: pooled textures and objects that must outlive the GPU work.
-private final class FrameRes {
+final class FrameRes {
     var pool: [TexKey: [MTLTexture]] = [:]
     var used: [TexKey: Int] = [:]
     var holds: [Any] = []
@@ -67,7 +80,7 @@ private final class FrameRes {
     }
 }
 
-private struct SrcTex { var tex: MTLTexture; var w: Int; var h: Int }
+struct SrcTex { var tex: MTLTexture; var w: Int; var h: Int }
 private enum Item {
     case slot(QuadU, MTLTexture?)
     case sprite(QuadU, MTLTexture, MTLScissorRect?)
@@ -102,7 +115,7 @@ final class MetalCompositor {
     /// Per-source rotation / flip (set from the UI thread).
     func setTransforms(_ t: [SourceRef: SourceTransform]) { cfgLock.lock(); _transforms = t; cfgLock.unlock() }
     var vivid: VividLevel { get { cfgLock.lock(); defer { cfgLock.unlock() }; return _vivid } set { cfgLock.lock(); _vivid = newValue; cfgLock.unlock() } }
-    private func transform(_ r: SourceRef) -> SourceTransform { cfgLock.lock(); defer { cfgLock.unlock() }; return _transforms[r] ?? .identity }
+    func transform(_ r: SourceRef) -> SourceTransform { cfgLock.lock(); defer { cfgLock.unlock() }; return _transforms[r] ?? .identity }
     private func vividParams(sharpen: Bool) -> VividU {
         switch vivid {
         case .off: return VividU()
@@ -111,11 +124,12 @@ final class MetalCompositor {
         }
     }
     let overlayImages = OverlayImageCache()
+    let layers: LayerRenderer
     private let outPool: CVPixelBufferPool
     let previewWidth: Int, previewHeight: Int
     private let previewPool: CVPixelBufferPool
 
-    init?(width: Int = studioWidth, height: Int = studioHeight, previewWidth: Int = 480, previewHeight: Int = 270) {
+    init?(width: Int = studioWidth, height: Int = studioHeight, previewWidth: Int = 480, previewHeight: Int = 270, sharedSprites: SpriteStore? = nil) {
         guard let dev = MTLCreateSystemDefaultDevice(), let q = dev.makeCommandQueue() else { return nil }
         device = dev; queue = q; self.width = width; self.height = height
         S = CGFloat(width) / LayoutMath.designW
@@ -124,7 +138,7 @@ final class MetalCompositor {
         guard CVMetalTextureCacheCreate(nil, nil, dev, nil, &tc) == kCVReturnSuccess, let tcache = tc else { return nil }
         texCache = tcache
         do {
-            let lib = try dev.makeLibrary(source: metalShaderSource, options: nil)
+            let lib = try dev.makeLibrary(source: metalShaderSource + layerShaderSource, options: nil)
             convNV12 = try dev.makeComputePipelineState(function: lib.makeFunction(name: "convNV12")!)
             convBGRA = try dev.makeComputePipelineState(function: lib.makeFunction(name: "convBGRA")!)
             func pso(_ v: String, _ f: String, _ fmt: MTLPixelFormat, blend: Bool) throws -> MTLRenderPipelineState {
@@ -143,6 +157,8 @@ final class MetalCompositor {
             spritePSO = try pso("vsQuad", "fsSprite", .rgba16Float, blend: true)
             mixPSO = try pso("vsFull", "fsMix", .rgba16Float, blend: false)
             outPSO = try pso("vsFull", "fsOut", .bgra8Unorm, blend: false)
+            guard let lr = LayerRenderer(device: dev, library: lib, sprites: sharedSprites) else { NSLog("MetalCompositor: layer pipelines failed"); return nil }
+            layers = lr
         } catch { NSLog("MetalCompositor: shader build failed: \(error)"); return nil }
         lanczos = MPSImageLanczosScale(device: dev)
         let dd = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float, width: 1, height: 1, mipmapped: false)
@@ -157,6 +173,8 @@ final class MetalCompositor {
         }
         guard let op = makePool(width, height, min: 4), let pp = makePool(previewWidth, previewHeight, min: 3) else { return nil }
         outPool = op; previewPool = pp
+        layers.overlayImages = overlayImages
+        layers.transformFor = { [unowned self] in self.transform($0) }
     }
 
     // MARK: buffers
@@ -206,6 +224,15 @@ final class MetalCompositor {
 
     // MARK: render
 
+    private func sceneOrPlaceholder(_ s: LayerScene?) -> LayerScene {
+        if let s { return s }
+        var p = LayerScene(id: "none", name: "No scene", background: .solid(RGBA(hex: 0x06090C)))
+        var st = TextStyle("Pick a scene to go on air", size: Double(height) * 0.045, weight: 700, color: RGBA(1, 1, 1, 0.55))
+        st.alignment = .center
+        p.layers = [Layer(name: "Hint", kind: .text(st), transform: Transform(x: 0, y: 0, w: Double(width), h: Double(height)))]
+        return p
+    }
+
     /// Encodes and commits one frame. Returns false when all three frames are still in flight (caller should hold the last frame).
     /// `completion` runs on a Metal thread with the GPU time in milliseconds.
     @discardableResult
@@ -214,14 +241,36 @@ final class MetalCompositor {
         let fr = frames[frameIdx]; frameIdx = (frameIdx + 1) % frames.count
         fr.reset()
         guard let cb = queue.makeCommandBuffer() else { inflight.signal(); return false }
+        encodeFrame(req, targets: targets, fr: fr, cb: cb)
+        let holds = fr
+        cb.addCompletedHandler { [inflight, texCacheLock] c in
+            let ms = (c.gpuEndTime - c.gpuStartTime) * 1000
+            texCacheLock.lock(); holds.holds.removeAll(); texCacheLock.unlock()
+            inflight.signal()
+            completion(ms)
+        }
+        cb.commit()
+        return true
+    }
+
+    /// Source texture conversion + scene passes + transition + overlays + final pass.
+    private func encodeFrame(_ req: FrameRequest, targets: FrameTargets, fr: FrameRes, cb: MTLCommandBuffer) {
+        let prog = sceneOrPlaceholder(req.layerProgram ?? req.program.map { LayerScene.migrate($0) })
+        let transitioning = req.mix < 1 && (req.layerPrevious != nil || req.previous != nil)
+        let prev: LayerScene? = transitioning ? (req.layerPrevious ?? req.previous.map { LayerScene.migrate($0) }) : nil
+        let pview: LayerScene? = req.layerPreview ?? req.previewScene.map { LayerScene.migrate($0) }
+        layers.slateTitle = slateTitle; layers.slateText = slateText
+        let vars = req.variables
+        let rest = AnimClock(sinceShow: 1e6, sinceTake: 1e6, sinceHide: nil, time: req.time)
 
         // 1. gather + convert sources
-        var scenes: [Scene?] = [req.program]
-        let transitioning = req.mix < 1 && req.previous != nil
-        if transitioning { scenes.append(req.previous) }
-        if req.previewScene != nil { scenes.append(req.previewScene) }
         var refs = Set<SourceRef>()
-        for s in scenes { for r in s?.slots ?? [] { if let r = r, r != .slate { refs.insert(r) } } }
+        for s in [prog, prev, pview] {
+            for r in s?.sourceRefs ?? [] {
+                if r == .slate { if let intro = layers.introPropId { refs.insert(.prop(id: intro)) } } else { refs.insert(r) }
+            }
+        }
+        if transitioning, req.transition.kind == .stinger, let sp = req.transition.stingerPropId { refs.insert(.prop(id: sp)) }
         var srcs: [SourceRef: SrcTex] = [:]
         if let ce = cb.makeComputeCommandEncoder() {
             for r in refs {
@@ -234,46 +283,100 @@ final class MetalCompositor {
         for k in lastBuffers.keys where !refs.contains(k) { lastBuffers[k] = nil }
         fr.holds.append(contentsOf: lastBuffers.values.map { $0 as Any })
 
-        // 2. draw lists (encodes MPS downscales)
-        let progList = drawList(req.program, srcs, fr, cb)
-        let prevList = transitioning ? drawList(req.previous, srcs, fr, cb) : []
-        let prevwList = req.previewScene != nil ? drawList(req.previewScene, srcs, fr, cb) : []
-        let overlayList = overlayItems(req)
-
-        // 3. passes
+        let frame = SceneFrame(cb: cb, fr: fr, srcs: srcs, time: req.time, vars: vars)
         let W = width, H = height
-        let canvas = fr.tex(device, W, H)
-        var final = canvas
-        if transitioning {
+
+        // 2. scene passes
+        var canvas = fr.tex(device, W, H)
+        if transitioning, let prev = prev {
+            let tr = req.transition
             let a = fr.tex(device, W, H), b = fr.tex(device, W, H)
-            pass(cb, a, clear: true) { self.encode(prevList, $0) }
-            pass(cb, b, clear: true) { self.encode(progList, $0) }
-            pass(cb, canvas, clear: false, pso: mixPSO) { e in
-                e.setFragmentTexture(a, index: 0); e.setFragmentTexture(b, index: 1)
-                var t = req.mix; e.setFragmentBytes(&t, length: 4, index: 0)
-                e.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+            layers.render(prev, clock: req.previousClock ?? rest, frame: frame, target: a)
+            layers.render(prog, clock: req.programClock ?? rest, frame: frame, target: b)
+            let p = Tween.ease(tr.kind == .fade ? .linear : .easeInOut, Double(req.mix))
+            if tr.kind == .stinger || tr.kind == .cut {
+                let cut = tr.kind == .cut ? 0.0 : tr.cutPoint
+                layers.encodeBlit(from: Double(req.mix) < cut ? a : b, to: canvas, cb: cb)
+                if tr.kind == .stinger, let sp = tr.stingerPropId {
+                    let l = Layer(name: "Stinger", kind: .source(.prop(id: sp), fit: .fill), transform: Transform(x: 0, y: 0, w: Double(W), h: Double(H)))
+                    layers.drawStandalone(l, onto: canvas, frame: frame)
+                }
+            } else {
+                layers.transition(tr.kind, progress: Float(p), directionDeg: tr.direction, a: a, b: b, into: canvas, cb: cb)
             }
-        } else { pass(cb, canvas, clear: true) { self.encode(progList, $0) } }
-        if !overlayList.isEmpty { pass(cb, final, clear: false, load: true) { self.encode(overlayList, $0) } }
-        final = canvas
-        if let outTex = mapTexture(targets.output, plane: 0, .bgra8Unorm, usage: [.renderTarget, .shaderRead], fr: fr) {
-            presentPass(cb, final, into: outTex)
+        } else {
+            layers.render(prog, clock: req.programClock ?? rest, frame: frame, target: canvas)
         }
-        if let pp = targets.programPreview { previewPass(cb, final, pp, fr) }
-        if let sp = targets.scenePreview, req.previewScene != nil {
+
+        // 2b. triggers (above the scene, under the station overlays), then the screen shake
+        for t in req.triggers { layers.drawOverlay(t.layers, clock: t.clock, onto: canvas, frame: frame) }
+        if abs(req.shake.x) >= 1 || abs(req.shake.y) >= 1 {
+            let shaken = fr.tex(device, W, H)
+            pass(cb, shaken, clear: true) { _ in }
+            let dx = Int(req.shake.x.rounded()), dy = Int(req.shake.y.rounded())
+            let sx = max(0, -dx), sy = max(0, -dy), dxo = max(0, dx), dyo = max(0, dy)
+            let cw = W - abs(dx), ch = H - abs(dy)
+            if cw > 0, ch > 0, let b = cb.makeBlitCommandEncoder() {
+                b.copy(from: canvas, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: sx, y: sy, z: 0), sourceSize: MTLSize(width: cw, height: ch, depth: 1),
+                       to: shaken, destinationSlice: 0, destinationLevel: 0, destinationOrigin: MTLOrigin(x: dxo, y: dyo, z: 0))
+                b.endEncoding()
+                canvas = shaken
+            }
+        }
+
+        // 3. overlays, final pass
+        let overlayList = overlayItems(req)
+        if !overlayList.isEmpty { pass(cb, canvas, clear: false, load: true) { self.encode(overlayList, $0) } }
+        if let outTex = mapTexture(targets.output, plane: 0, .bgra8Unorm, usage: [.renderTarget, .shaderRead], fr: fr) {
+            presentPass(cb, canvas, into: outTex)
+        }
+        if let pp = targets.programPreview { previewPass(cb, canvas, pp, fr) }
+        if let sp = targets.scenePreview, let pv = pview {
             let pc = fr.tex(device, W, H)
-            pass(cb, pc, clear: true) { self.encode(prevwList, $0) }
+            layers.render(pv, clock: req.previewClock ?? rest, frame: frame, target: pc)
             previewPass(cb, pc, sp, fr)
         }
-        let holds = fr
-        cb.addCompletedHandler { [inflight, texCacheLock] c in
-            let ms = (c.gpuEndTime - c.gpuStartTime) * 1000
-            texCacheLock.lock(); holds.holds.removeAll(); texCacheLock.unlock()
-            inflight.signal()
-            completion(ms)
+    }
+
+    /// Renders a scene to a CGImage (editor thumbnails, template gallery). Synchronous; sprites rasterise inline. Not for the live compositor.
+    func renderStill(_ scene: LayerScene, size: CGSize, variables: SceneVariables = .sample, time: Double = 0, clock: AnimClock? = nil, applyVivid: Bool = false) -> CGImage? {
+        let ow = max(1, Int(size.width.rounded())), oh = max(1, Int(size.height.rounded()))
+        layers.sprites.sync = true
+        defer { layers.sprites.sync = false }
+        guard let cb = queue.makeCommandBuffer() else { return nil }
+        let fr = FrameRes()
+        var refs = Set(scene.sourceRefs); refs.remove(.slate)
+        var srcs: [SourceRef: SrcTex] = [:]
+        if let ce = cb.makeComputeCommandEncoder() {
+            for r in refs { if let pb = provider?.source(for: r)?.latestFrame(), let st = convert(pb, fr: fr, ce: ce) { srcs[r] = st } }
+            ce.endEncoding()
         }
-        cb.commit()
-        return true
+        layers.slateTitle = slateTitle; layers.slateText = slateText
+        let vars = variables
+        let canvas = fr.tex(device, width, height)
+        layers.render(scene, clock: clock ?? AnimClock(sinceShow: 1e6, sinceTake: 1e6, time: time),
+                      frame: SceneFrame(cb: cb, fr: fr, srcs: srcs, time: time, vars: vars), target: canvas)
+        let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: ow, height: oh, mipmapped: false)
+        d.usage = [.renderTarget, .shaderRead]; d.storageMode = .shared
+        guard let out = device.makeTexture(descriptor: d) else { return nil }
+        var src = canvas
+        if ow != width || oh != height {
+            let small = fr.tex(device, ow, oh)
+            lanczos.scaleTransform = nil
+            lanczos.encode(commandBuffer: cb, sourceTexture: canvas, destinationTexture: small)
+            src = small
+        }
+        let savedVivid = vivid
+        if !applyVivid { vivid = .off }
+        presentPass(cb, src, into: out, sharpen: false)
+        vivid = savedVivid
+        cb.commit(); cb.waitUntilCompleted()
+        fr.holds.removeAll()
+        var bytes = [UInt8](repeating: 0, count: ow * oh * 4)
+        out.getBytes(&bytes, bytesPerRow: ow * 4, from: MTLRegionMake2D(0, 0, ow, oh), mipmapLevel: 0)
+        guard let ctx = CGContext(data: &bytes, width: ow, height: oh, bitsPerComponent: 8, bytesPerRow: ow * 4, space: Art.cs,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue) else { return nil }
+        return ctx.makeImage()
     }
 
     private func pass(_ cb: MTLCommandBuffer, _ target: MTLTexture, clear: Bool, load: Bool = false, pso: MTLRenderPipelineState? = nil, _ body: (MTLRenderCommandEncoder) -> Void) {
@@ -372,7 +475,7 @@ final class MetalCompositor {
         return SrcTex(tex: out, w: w, h: h)
     }
 
-    // MARK: scene drawing
+    // MARK: quads for overlays
 
     private func hex(_ v: UInt32) -> SIMD4<Float> {
         SIMD4<Float>(Float((v >> 16) & 255) / 255, Float((v >> 8) & 255) / 255, Float(v & 255) / 255, 1)
@@ -384,105 +487,6 @@ final class MetalCompositor {
         u.p = SIMD4(kind, radius, border, opacity)
         u.q = SIMD4(Float(width), Float(height), 0, 0)
         return u
-    }
-
-    private func drawList(_ scene: Scene?, _ srcs: [SourceRef: SrcTex], _ fr: FrameRes, _ cb: MTLCommandBuffer) -> [Item] {
-        let full = CGRect(x: 0, y: 0, width: width, height: height)
-        var items: [Item] = []
-        guard let scene = scene else {
-            items.append(.slot(quad(full, kind: 1, c0: hex(0x06090C)), nil))
-            items += slateItems(full, text: "Pick a scene to go on air", fr: fr)
-            return items
-        }
-        let rects = LayoutMath.rects(for: scene.layout, width: CGFloat(width), height: CGFloat(height))
-        if rects.contains(where: { $0.framed }) {
-            var u = quad(full, kind: 2, c0: hex(0x0B1A1D), c1: hex(0x05080A)); u.q = SIMD4(Float(width), Float(height), 0, 0)
-            items.append(.slot(u, nil))
-        } else { items.append(.slot(quad(full, kind: 1, c0: hex(0x06090C)), nil)) }
-        for (i, sr) in rects.enumerated() {
-            let r = CGRect(x: sr.rect.minX.rounded(), y: sr.rect.minY.rounded(), width: sr.rect.width.rounded(), height: sr.rect.height.rounded())
-            let ref: SourceRef? = i < scene.slots.count ? scene.slots[i] : nil
-            items += slotItems(ref, r, framed: sr.framed, fit: scene.fit(i), srcs, fr, cb)
-        }
-        return items
-    }
-
-    private func slotItems(_ ref: SourceRef?, _ r: CGRect, framed: Bool, fit: Bool, _ srcs: [SourceRef: SrcTex], _ fr: FrameRes, _ cb: MTLCommandBuffer) -> [Item] {
-        let rad = framed ? Float(12 * S) : 0, bw = framed ? Float(1.5 * S) : 0
-        let w = Int(r.width), h = Int(r.height)
-        func labelled(_ bg: UInt32, _ text: String) -> [Item] {
-            var out: [Item] = [.slot(quad(r, kind: 1, c0: hex(bg), radius: rad, border: bw), nil)]
-            if let t = sprite("label|\(text)|\(w)x\(h)", { Art.label(text, w: w, h: h) }) { out.append(.sprite(quad(r, kind: 0), t, nil)) }
-            return out
-        }
-        guard let ref = ref else { return labelled(0x11181C, "Empty slot") }
-        if ref == .slate { return slateItems(r, text: slateText, fr: fr, radius: rad, border: bw) }
-        guard let st = srcs[ref] else {
-            if case .device = ref { return labelled(0x0D1418, "Waiting for the phone's video…") }
-            return labelled(0x0D1418, "Loading…")
-        }
-        var u = quad(r, kind: 0, radius: rad, border: bw)
-        let xf = transform(ref)
-        let odd = xf.quarterTurns % 2 == 1
-        let ew = CGFloat(odd ? st.h : st.w), eh = CGFloat(odd ? st.w : st.h)       // display-space source size (after rotation)
-        var items: [Item] = []
-        var contain = fit
-        if case .image = ref { contain = true }
-        var tex = st.tex
-        var target = r
-        var upscale: CGFloat = 1
-        func srcDims(_ dw: Int, _ dh: Int) -> (Int, Int) { odd ? (dh, dw) : (dw, dh) }
-        if contain {
-            let sc = min(r.width / ew, r.height / eh)
-            let dw = (ew * sc).rounded(), dh = (eh * sc).rounded()
-            items.append(.slot(quad(r, kind: 1, c0: hex(0x06090C), radius: rad, border: bw), nil))
-            target = CGRect(x: r.minX + ((r.width - dw) / 2).rounded(), y: r.minY + ((r.height - dh) / 2).rounded(), width: dw, height: dh)
-            u = quad(target, kind: 0)
-            if sc < 0.999 {
-                let (sw, sh) = srcDims(Int(dw), Int(dh))
-                tex = scaled(st.tex, to: (sw, sh), scaleX: Double(CGFloat(sw) / CGFloat(st.w)), scaleY: Double(CGFloat(sh) / CGFloat(st.h)), tx: 0, ty: 0, fr, cb)
-            } else if abs(sc - 1) > 0.001 { upscale = sc }
-        } else {
-            let s = max(r.width / ew, r.height / eh)
-            if s < 0.999 {
-                let (sw, sh) = srcDims(w, h)
-                let sx = CGFloat(st.w) * s, sy = CGFloat(st.h) * s
-                tex = scaled(st.tex, to: (sw, sh), scaleX: Double(s), scaleY: Double(s), tx: Double((CGFloat(sw) - sx) / 2), ty: Double((CGFloat(sh) - sy) / 2), fr, cb)
-            } else {
-                let c = LayoutMath.coverCrop(srcW: ew, srcH: eh, dstW: r.width, dstH: r.height)
-                u.uv = SIMD4(Float(c.minX / ew), Float(c.minY / eh), Float(c.maxX / ew), Float(c.maxY / eh))
-                if abs(s - 1) > 0.001 { upscale = s }
-            }
-        }
-        // sources smaller than their slot: Catmull-Rom + mild limited-halo sharpening; exact 1:1 stays a plain texel read
-        if upscale > 1, debugUpscaleMode != 0 { u.p.x = 4; u.c0.x = debugUpscaleMode == 1 ? 0 : debugUpscaleMode == 3 ? 0.8 : debugUpscaleMode == 4 ? 1.2 : (upscale >= 2 ? 0.5 : upscale >= 1.25 ? 0.35 : 0.2) }
-        u.c1.z = xf.flip ? 1 : 0; u.c1.w = Float(xf.quarterTurns)
-        if ref == .camera { u.uv = SIMD4(u.uv.z, u.uv.y, u.uv.x, u.uv.w) }   // mirror the webcam
-        items.append(.slot(u, tex))
-        return items
-    }
-
-    /// Lanczos downscale `src` into a pooled (w x h) texture with the given source->dest transform.
-    private func scaled(_ src: MTLTexture, to size: (Int, Int), scaleX: Double, scaleY: Double, tx: Double, ty: Double, _ fr: FrameRes, _ cb: MTLCommandBuffer) -> MTLTexture {
-        let dst = fr.tex(device, max(1, size.0), max(1, size.1))
-        var t = MPSScaleTransform(scaleX: scaleX, scaleY: scaleY, translateX: tx, translateY: ty)
-        withUnsafePointer(to: &t) { p in
-            lanczos.scaleTransform = p
-            lanczos.encode(commandBuffer: cb, sourceTexture: src, destinationTexture: dst)
-            lanczos.scaleTransform = nil
-        }
-        return dst
-    }
-
-    private func slateItems(_ r: CGRect, text: String, fr: FrameRes, radius: Float = 0, border: Float = 0) -> [Item] {
-        var u = quad(r, kind: 3, c0: hex(0x0F3B3A), c1: hex(0x04070A), radius: radius, border: border)
-        u.q.z = Float(20 * S); u.q.w = Float(max(r.width, r.height) * 0.7)
-        var out: [Item] = [.slot(u, nil)]
-        let w = Int(r.width), h = Int(r.height)
-        if let t = sprite("slate|\(slateTitle)|\(text)|\(w)x\(h)", { Art.slateText(title: slateTitle, text: text, w: w, h: h) }) {
-            out.append(.sprite(quad(r, kind: 0), t, nil))
-        }
-        return out
     }
 
     // MARK: overlays (design units are 1280x720; S scales them)

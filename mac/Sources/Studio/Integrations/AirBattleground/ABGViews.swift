@@ -1,3 +1,4 @@
+import Vision
 import SwiftUI
 import AppKit
 import AVFoundation
@@ -16,9 +17,13 @@ private struct QRScannerView: NSViewRepresentable {
     func updateNSView(_ v: NSView, context: Context) { context.coordinator.layout(v) }
     static func dismantleNSView(_ v: NSView, coordinator: Coord) { coordinator.stop() }
 
-    final class Coord: NSObject, AVCaptureMetadataOutputObjectsDelegate, @unchecked Sendable {
+    /// QR scanning with Vision on camera frames. (AVCaptureMetadataOutput's .qr type is often unavailable on Macs, and
+    /// setting an unavailable type throws an Objective-C exception that kills the app.)
+    final class Coord: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
         let onCode: (String) -> Void, onFailure: (String) -> Void
         let session = AVCaptureSession(); var preview: AVCaptureVideoPreviewLayer?
+        private let q = DispatchQueue(label: "qr.scan")
+        private var lastScan = 0.0, lastCode: String?
         init(onCode: @escaping (String) -> Void, onFailure: @escaping (String) -> Void) { self.onCode = onCode; self.onFailure = onFailure }
         func start(in view: NSView) {
             AVCaptureDevice.requestAccess(for: .video) { ok in
@@ -27,11 +32,11 @@ private struct QRScannerView: NSViewRepresentable {
                         onFailure("Couldn't open the camera. Allow camera access in System Settings, or paste the link below."); return
                     }
                     session.addInput(input)
-                    let out = AVCaptureMetadataOutput()
+                    let out = AVCaptureVideoDataOutput()
+                    out.alwaysDiscardsLateVideoFrames = true
                     guard session.canAddOutput(out) else { onFailure("Couldn't start QR scanning. Paste the link below."); return }
                     session.addOutput(out)
-                    out.setMetadataObjectsDelegate(self, queue: .main)
-                    out.metadataObjectTypes = [.qr]
+                    out.setSampleBufferDelegate(self, queue: q)
                     let l = AVCaptureVideoPreviewLayer(session: session); l.videoGravity = .resizeAspectFill; l.frame = view.bounds
                     view.layer?.addSublayer(l); preview = l
                     DispatchQueue.global(qos: .userInitiated).async { self.session.startRunning() }
@@ -40,8 +45,16 @@ private struct QRScannerView: NSViewRepresentable {
         }
         func layout(_ v: NSView) { preview?.frame = v.bounds }
         func stop() { if session.isRunning { session.stopRunning() } }
-        func metadataOutput(_ o: AVCaptureMetadataOutput, didOutput objs: [AVMetadataObject], from c: AVCaptureConnection) {
-            if let s = (objs.first as? AVMetadataMachineReadableCodeObject)?.stringValue { onCode(s) }
+        func captureOutput(_ o: AVCaptureOutput, didOutput sb: CMSampleBuffer, from c: AVCaptureConnection) {
+            let now = CACurrentMediaTime()
+            guard now - lastScan > 0.2, let pb = CMSampleBufferGetImageBuffer(sb) else { return }
+            lastScan = now
+            let req = VNDetectBarcodesRequest(); req.symbologies = [.qr]
+            try? VNImageRequestHandler(cvPixelBuffer: pb, options: [:]).perform([req])
+            guard let code = req.results?.first(where: { $0.payloadStringValue != nil })?.payloadStringValue else { return }
+            guard code != lastCode else { return }      // an unrelated QR is reported once, then scanning continues
+            lastCode = code
+            DispatchQueue.main.async { self.onCode(code) }
         }
     }
 }
@@ -133,10 +146,12 @@ struct ABGMatchPicker: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(m.title).font(Theme.Font.bodyBold)
                                 if !m.subtitle.isEmpty { Text(m.subtitle).font(Theme.Font.caption).foregroundStyle(Theme.muted) }
+                                if let r = m.control?.reason { Text(r).font(Theme.Font.caption).foregroundStyle(Theme.faint).lineLimit(2) }
                             }
                             Spacer()
                             if let d = Self.when(m.startsAt) { Text(d).font(Theme.Font.caption).foregroundStyle(Theme.muted) }
-                            Pill(text: m.status.rawValue.uppercased(), color: m.status == .live ? Theme.program : Theme.muted)
+                            if let c = m.control { MatchControlChip(control: c) }
+                            else { Pill(text: m.status.rawValue.uppercased(), color: m.status == .live ? Theme.program : Theme.muted) }
                             if abg.link?.eventId == m.id { Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.ok) }
                         }.contentShape(Rectangle())
                     }.buttonStyle(.plain)
@@ -149,6 +164,7 @@ struct ABGMatchPicker: View {
         }
         .padding(20).frame(width: 560, height: 460)
         .task { if abg.matches.isEmpty || Date().timeIntervalSince(abg.matchesLoadedAt ?? .distantPast) > 30 { await abg.refreshMatches() } }
+        // the list re-polls every 30 s while open and when a countdown reaches 0 (ABGController.listRefreshDue)
     }
     static func when(_ iso: String?) -> String? {
         guard let iso, let d = ISO8601DateFormatter().date(from: iso) ?? { let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]; return f.date(from: iso) }() else { return nil }
@@ -215,6 +231,7 @@ struct ABGMatchSummary: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(l.eventTitle ?? "Match").font(Theme.Font.bodyBold)
                 if let s = l.eventSubtitle { Text(s).font(Theme.Font.caption).foregroundStyle(Theme.muted) }
+                if let c = model.abg.selectedControl { MatchControlChip(control: c).padding(.top, 2) }
             }
         } else { Text("No match selected").font(Theme.Font.caption).foregroundStyle(Theme.muted) }
     }
@@ -287,6 +304,11 @@ struct GoLiveSheet: View {
                     HStack(spacing: 6) { Image(systemName: "sportscourt.fill"); ABGMatchSummary(); Spacer(); Button("Change") { showMatches = true }.controlSize(.small) }
                         .padding(8).background(Theme.panelHi, in: RoundedRectangle(cornerRadius: 8))
                     Toggle("Also record to disk", isOn: $alsoRecord).toggleStyle(.checkbox)
+                    if option == .adminYouTube {
+                        Divider().overlay(Theme.stroke)
+                        Text("YOUTUBE THUMBNAIL").font(Theme.Font.label).tracking(0.8).foregroundStyle(Theme.muted)
+                        ThumbnailPanelContent(compact: true)
+                    }
                 } else if !abg.isConnected {
                     Text("Connect AirBattleground to stream to the admin's YouTube.").foregroundStyle(Theme.muted)
                     Button { showConnect = true } label: { Label("Connect", systemImage: "link") }.controlSize(.small)
@@ -323,7 +345,7 @@ struct GoLiveSheet: View {
                 .disabled(starting || (option == .adminYouTube && !youtubeReady))
             }
         }
-        .padding(20).frame(width: 480)
+        .padding(20).frame(width: 520)
         .onAppear { if !youtubeReady { option = .recordOnly }; alsoRecord = model.recordOn }
         .onChange(of: youtubeReady) { _, ready in if ready { option = .adminYouTube } }
         .sheet(isPresented: $showConnect) { ABGConnectDialog().environment(model) }

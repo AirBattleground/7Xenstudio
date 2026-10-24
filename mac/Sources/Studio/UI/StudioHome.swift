@@ -69,6 +69,7 @@ struct ProgramPlayer: View {
                         .padding(.horizontal, 8).frame(height: 22).background(.black.opacity(0.5), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
                 }
                 ABGMatchBadge()
+                AutoCaptureBadge()
             }.padding(12)
         }
         .overlay(alignment: .topTrailing) { PreviewInset(width: min(240, max(150, width * 0.22))).padding(12) }
@@ -208,14 +209,27 @@ struct ScenesBar: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 10) {
-                SectionHeader(text: "Scenes")
-                Text("1-9 select  ·  Space takes  ·  double-click takes").font(Theme.Font.caption).foregroundStyle(Theme.faint)
+                SectionHeader(text: "Scenes · \(model.activePreset?.name ?? "All")")
+                Text("⌘1-9 select  ·  Space takes  ·  double-click takes  ·  drag to reorder").font(Theme.Font.caption).foregroundStyle(Theme.faint)
                 Spacer()
             }
             ScrollView(.horizontal, showsIndicators: true) {
                 LazyHStack(spacing: 10) {
+                    if model.scenes.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("“\(model.activePreset?.name ?? "This preset")” has no scenes yet").font(Theme.Font.bodyBold).foregroundStyle(Theme.text)
+                            Text("Create one with New Scene, or add existing scenes from the preset menu (Choose scenes…).").font(Theme.Font.caption).foregroundStyle(Theme.muted)
+                        }.frame(width: 260, height: 134, alignment: .leading).padding(.horizontal, 8)
+                    }
                     ForEach(Array(model.scenes.enumerated()), id: \.element.id) { i, s in
                         SceneCard(scene: s, index: i).frame(width: Self.cardW).fixedSize(horizontal: false, vertical: true)
+                            // drag a card onto another to reorder the active preset (= hotkey order 1-9)
+                            .draggable(s.id) { Text(s.name).font(Theme.Font.bodyBold).padding(8).background(Theme.panelHi, in: RoundedRectangle(cornerRadius: 6)) }
+                            .dropDestination(for: String.self) { ids, _ in
+                                guard let id = ids.first, id != s.id, model.scenes.contains(where: { $0.id == id }) else { return false }
+                                withAnimation(.easeOut(duration: 0.2)) { model.moveSceneInActivePreset(id, to: i) }
+                                return true
+                            } isTargeted: { _ in }
                     }
                     Button { model.newScene() } label: {
                         VStack(spacing: 6) {

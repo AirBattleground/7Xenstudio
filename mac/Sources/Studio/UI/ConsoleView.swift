@@ -4,11 +4,11 @@ import AppKit
 // MARK: - Pages
 
 enum StudioPage: String, CaseIterable, Identifiable {
-    case studio = "Studio", phones = "Phones", props = "Props", audio = "Audio", recordings = "Recordings", outputs = "Outputs", settings = "Settings"
+    case studio = "Studio", scenes = "Scenes", phones = "Phones", props = "Props", audio = "Audio", recordings = "Recordings", outputs = "Outputs", settings = "Settings"
     var id: String { rawValue }
     var icon: String {
         switch self {
-        case .studio: "rectangle.split.3x1.fill"; case .phones: "iphone.gen3"; case .props: "photo.on.rectangle.angled"; case .audio: "slider.vertical.3"
+        case .studio: "rectangle.split.3x1.fill"; case .scenes: "square.3.layers.3d"; case .phones: "iphone.gen3"; case .props: "photo.on.rectangle.angled"; case .audio: "slider.vertical.3"
         case .recordings: "film.stack"; case .outputs: "dot.radiowaves.left.and.right"; case .settings: "gearshape"
         }
     }
@@ -36,6 +36,7 @@ struct PageScaffold<Content: View>: View {
 struct ConsoleView: View {
     @Environment(AppModel.self) var model
     @State private var inspectorOverride: Bool?
+    @State private var inspectorTab: InspectorTab = InspectorTab(rawValue: ProcessInfo.processInfo.environment["STUDIO_INSPECTOR_TAB"] ?? "") ?? .sources
     var body: some View {
         GeometryReader { g in
             let open = inspectorOverride ?? (g.size.width >= 1200)
@@ -43,23 +44,42 @@ struct ConsoleView: View {
             HStack(spacing: 0) {
                 GeometryReader { c in
                     let pad: CGFloat = 14, gap: CGFloat = 10
-                    let fixedH = 46 + 164 + 2 * gap + 2 * pad
+                    let fixedH = 34 + 46 + JourneyBar.height + 164 + 4 * gap + 2 * pad
                     let maxH = max(180, c.size.height - fixedH)
                     let playerW = max(320, min(c.size.width - 2 * pad, maxH * 16 / 9))
                     VStack(spacing: gap) {
+                        StudioPresetHeader()
                         ProgramPlayer(width: playerW).frame(maxWidth: .infinity)
                         TransitionBar(inspectorOpen: Binding(get: { open }, set: { inspectorOverride = $0 }))
+                        JourneyBar()
                         Spacer(minLength: 0)
                         ScenesBar()
                     }
                     .padding(pad)
+                    .overlay(alignment: .top) { AutoSwitchToast().padding(.top, pad + 34 + gap + 12).animation(.easeOut(duration: 0.2), value: model.autoSwitch) }
                 }
                 if open {
                     Divider().overlay(Theme.stroke)
-                    InspectorView().frame(width: inspW).transition(.move(edge: .trailing))
+                    InspectorView(tab: $inspectorTab).frame(width: inspW).transition(.move(edge: .trailing))
                 }
             }
         }
+        .onChange(of: model.capture.focusRequest) { _, _ in withAnimation(.easeOut(duration: 0.2)) { inspectorOverride = true; inspectorTab = .capture } }
+    }
+}
+
+/// Top of the Studio page: the active preset (what you stream with) and the shared match data feed.
+struct StudioPresetHeader: View {
+    @Environment(AppModel.self) var model
+    var body: some View {
+        HStack(spacing: 10) {
+            PresetSwitcher()
+            Text("\(model.scenes.count) scene\(model.scenes.count == 1 ? "" : "s")").font(Theme.Font.caption).foregroundStyle(Theme.faint).lineLimit(1).fixedSize()
+            Spacer(minLength: 8)
+            AutoFollowControl()
+            MatchDataChip()
+        }
+        .frame(height: 34)
     }
 }
 
@@ -113,31 +133,43 @@ struct TransitionControls: View {
 
 // MARK: - Inspector
 
-enum InspectorTab: String, CaseIterable { case sources = "Sources", overlays = "Overlays", audio = "Audio", outputs = "Outputs" }
+enum InspectorTab: String, CaseIterable { case sources = "Sources", triggers = "Triggers", overlays = "Overlays", audio = "Audio", outputs = "Outputs", capture = "Capture" }
+extension InspectorTab {
+    var icon: String {
+        switch self {
+        case .sources: "video"; case .triggers: "bolt"; case .overlays: "square.on.square"; case .audio: "slider.vertical.3"
+        case .outputs: "dot.radiowaves.left.and.right"; case .capture: "camera.viewfinder"
+        }
+    }
+}
 
 struct InspectorView: View {
     @Environment(AppModel.self) var model
-    @State private var tab: InspectorTab = .sources
+    @Binding var tab: InspectorTab
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 2) {
                 ForEach(InspectorTab.allCases, id: \.self) { t in
                     Button { withAnimation(.easeOut(duration: 0.15)) { tab = t } } label: {
-                        Text(t.rawValue).font(.system(size: 12, weight: .semibold)).frame(maxWidth: .infinity, minHeight: 26)
+                        Image(systemName: t.icon).font(.system(size: 12, weight: .semibold))
+                            .frame(maxWidth: .infinity, minHeight: 26)
                             .foregroundStyle(tab == t ? Theme.text : Theme.muted)
                             .background(tab == t ? Color.white.opacity(0.1) : .clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    }.buttonStyle(.plain).accessibilityAddTraits(tab == t ? .isSelected : [])
+                    }.buttonStyle(.plain).help(t.rawValue).accessibilityLabel(t.rawValue).accessibilityAddTraits(tab == t ? .isSelected : [])
                 }
             }
             .padding(3).background(Theme.well, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .padding(Theme.Space.m)
+            .padding([.horizontal, .top], Theme.Space.m)
+            HStack { SectionHeader(text: tab.rawValue); Spacer() }.padding(.horizontal, Theme.Space.m + 2).padding(.vertical, 8)
             ScrollView {
                 VStack(spacing: Theme.Space.m) {
                     switch tab {
                     case .sources: PhonesPanel(); LocalSourcesPanel()
+                    case .triggers: TriggersPanel()
                     case .overlays: OverlaysPanel()
                     case .audio: CompactMixerPanel()
                     case .outputs: OutputsPanel()
+                    case .capture: AutoCapturePanel()
                     }
                 }.padding([.horizontal, .bottom], Theme.Space.m)
             }
@@ -237,7 +269,7 @@ struct StatusBar: View {
 
 struct RootView: View {
     @Environment(AppModel.self) var model
-    @State var page: StudioPage = .studio
+    @State var page: StudioPage = StudioPage(rawValue: ProcessInfo.processInfo.environment["STUDIO_PAGE"] ?? "") ?? .studio
     @State private var visibility: NavigationSplitViewVisibility = .all
     var body: some View {
         @Bindable var m = model
@@ -257,6 +289,7 @@ struct RootView: View {
                 Group {
                     switch page {
                     case .studio: ConsoleView()
+                    case .scenes: ScenesPage()
                     case .phones: PhonesPage()
                     case .props: PropsView()
                     case .audio: AudioMixerPage()
@@ -276,8 +309,9 @@ struct RootView: View {
         .background(WindowConfigurator())
         .toolbar { StudioToolbar() }
         .sheet(isPresented: $m.showAddPhone) { AddPhoneDialog() }
+        .sheet(isPresented: $m.showNewScene) { NewSceneSheet().environment(model) }
         .sheet(isPresented: $m.showStreamKey) { StreamKeyDialog() }
-        .sheet(item: $m.editingScene) { s in SceneEditor(draft: s) }
+        .onChange(of: model.editingScene?.id) { _, id in if id != nil { page = .scenes } }
         .sheet(isPresented: $m.showGoLiveConfirm) { GoLiveSheet().environment(model) }
         .sheet(isPresented: Binding(get: { model.abg.showConnect }, set: { model.abg.showConnect = $0 })) { ABGConnectDialog().environment(model) }
         .sheet(isPresented: Binding(get: { model.abg.showMatches }, set: { model.abg.showMatches = $0 })) { ABGMatchPicker().environment(model) }
@@ -390,7 +424,10 @@ struct OutputsPage: View {
     var body: some View {
         PageScaffold(title: "Outputs", subtitle: "Choose where the show goes: your Mac's disk and streaming destinations.") {
             HStack(alignment: .top, spacing: Theme.Space.l) {
-                OutputsPanel()
+                VStack(spacing: Theme.Space.l) {
+                    OutputsPanel()
+                    ThumbnailPanel()        // AirBattleground: YouTube thumbnail of the admin's broadcast
+                }
                 OutputHealthPanel().frame(width: 300)
             }
         }

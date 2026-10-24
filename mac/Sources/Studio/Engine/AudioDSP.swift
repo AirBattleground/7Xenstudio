@@ -237,62 +237,170 @@ struct MeterState {
         rms += (blockRMS - rms) * (blockRMS > rms ? 0.6 : 0.2)
         clipped = pk >= 0.999
     }
+    /// Clip LED: latched for `holdSeconds` after any block flagged `over` (the operator needs to see a 1 ms over).
+    private(set) var clipHoldLeft = 0
+    var clipLatched: Bool { clipHoldLeft > 0 }
+    mutating func flagClip(_ over: Bool, _ n: Int, holdSeconds: Double = 1.5) {
+        if over { clipHoldLeft = Int(holdSeconds * AudioMixer.sampleRate) } else { clipHoldLeft = max(0, clipHoldLeft - n) }
+    }
+    /// Pre-fader input level at which a channel's CLIP LED lights (-0.5 dBFS).
+    static let clipThreshold = Float(pow(10, -0.5 / 20))
 }
 
 /// Gain ramp helper: linear ramp from `from` to `to` across a block.
 @inline(__always) func rampGain(_ from: Float, _ to: Float, _ i: Int, _ n: Int) -> Float { from + (to - from) * Float(i + 1) / Float(n) }
 
-/// Look-ahead peak limiter for the master bus: the gain is the sliding minimum of the required gain, smoothed by a box filter of the
-/// same length so it has finished falling before the peak leaves the delay line (no instant-attack gain steps = no distortion
-/// products), then releases exponentially. Detection includes an inter-sample (cubic midpoint) estimate, so the AAC encoder's
-/// reconstruction overshoot stays below the ceiling. Latency: `lookahead - 1` frames.
+/// True-peak look-ahead limiter for the master bus.
+/// - Detection: sample peak plus the inter-sample peaks at 1/4, 1/2 and 3/4 between samples from a 12-tap-per-phase 4x
+///   polyphase interpolator (ITU-R BS.1770 style), so the AAC encoder's reconstruction overshoot stays under the ceiling. The old
+///   cubic midpoint estimate missed up to +3 dB of inter-sample peak on dense, hot programme (true peak +2 dBTP at a "-1 dB" ceiling,
+///   decoded AAC above 0 dBFS).
+/// - Gain: sliding minimum of the required gain over the 5 ms look-ahead (monotonic deque), smoothed by two cascaded box filters
+///   (an S-shaped attack with a continuous slope: no gain steps, no hard clamp in normal operation) that has fully landed before the
+///   peak leaves the delay line.
+/// - Release: program dependent. A one-pole tracks how much reduction has been sustained (~400 ms); isolated transients release in
+///   `fastReleaseMs`, sustained heavy limiting slides towards `slowReleaseMs` (no pumping / waveform-following gain on dense audio).
+/// - The final clamp at the ceiling is a last-resort numerical safety only. Latency: `lookahead - 1` frames.
 struct LookaheadLimiter {
-    var ceilingDb = -1.0
-    var releaseMs = 120.0
-    static let lookahead = 96                                   // 2 ms
-    private let n = LookaheadLimiter.lookahead
-    private var dl: [Float], dr: [Float]                        // audio delay
-    private var need: [Float]                                   // required gain per input sample (ring)
-    private var mins: [Float]                                   // sliding-min output (ring)
+    var ceilingDb = -2.0
+    var fastReleaseMs = 50.0, slowReleaseMs = 500.0
+    static let lookahead = 240                                  // 5 ms
+    static let ispHalf = 6                                      // 4x interpolator: 12 taps per phase, centred between x[t-6] and x[t-5]
+    // coverage: a requirement written at step s holds the gain for outputs s-(L+1-B1-B2) ... s; the inter-sample peak written at step t
+    // belongs to outputs t-6 / t-5, so B1 + B2 = L + 1 - (ispHalf + 1)
+    static let box1 = (lookahead - ispHalf) / 2, box2 = lookahead - ispHalf - box1
+    /// ISP interpolation taps (3 phases x 12), Kaiser-windowed sinc, unity DC.
+    static let ispTaps: [Float] = {
+        let half = ispHalf, n = 2 * ispHalf
+        func i0(_ x: Double) -> Double { var s = 1.0, t = 1.0; for k in 1..<30 { t *= (x / 2 / Double(k)) * (x / 2 / Double(k)); s += t }; return s }
+        var out = [Float]()
+        for f in [0.25, 0.5, 0.75] {
+            var row = [Double](), sum = 0.0
+            for k in 0..<n {
+                let x = Double(k) - Double(n - 1) + Double(half) - f        // tap k reads x[t-11+k]; target x[t-6+f]
+                let s = abs(x) < 1e-12 ? 1 : sin(Double.pi * x) / (Double.pi * x)
+                let u = x / Double(half)
+                let w = abs(u) >= 1 ? 0 : i0(5 * (1 - u * u).squareRoot()) / i0(5)
+                row.append(s * w); sum += s * w
+            }
+            out += row.map { Float($0 / sum) }
+        }
+        return out
+    }()
+
+    private let L = LookaheadLimiter.lookahead
+    private var dl: [Float], dr: [Float]                        // audio delay line
+    private var hl: [Float], hr: [Float], hw = 0                // detector history (12 newest inputs, ring)
+    private var dqIdx: [Int], dqVal: [Float], dqHead = 0, dqCount = 0      // monotonic deque for the sliding minimum
+    private var b1: [Float], b2: [Float], b1w = 0, b2w = 0
+    private var s1: Double, s2: Double
+    private var t = 0                                           // input sample counter (for the deque)
     private var w = 0
-    private var boxSum: Double = 0
     private var rel: Float = 1
-    private var h1: (Float, Float) = (0, 0), h2: (Float, Float) = (0, 0), h3: (Float, Float) = (0, 0)   // last inputs for the cubic estimate
+    private var sustainDb: Float = 0
     private(set) var lastReductionDb: Float = 0
     init() {
         dl = [Float](repeating: 0, count: LookaheadLimiter.lookahead); dr = dl
-        need = [Float](repeating: 1, count: LookaheadLimiter.lookahead); mins = need
-        boxSum = Double(LookaheadLimiter.lookahead)
+        hl = [Float](repeating: 0, count: 2 * LookaheadLimiter.ispHalf); hr = hl
+        dqIdx = [Int](repeating: 0, count: LookaheadLimiter.lookahead + 1); dqVal = [Float](repeating: 1, count: LookaheadLimiter.lookahead + 1)
+        b1 = [Float](repeating: 1, count: LookaheadLimiter.box1); b2 = [Float](repeating: 1, count: LookaheadLimiter.box2)
+        s1 = Double(LookaheadLimiter.box1); s2 = Double(LookaheadLimiter.box2)
     }
     mutating func process(_ l: UnsafeMutablePointer<Float>, _ r: UnsafeMutablePointer<Float>, _ cnt: Int) {
-        let ceil = Float(pow(10, ceilingDb / 20)), cR = AudioMath.coef(ms: releaseMs)
-        let invN = 1 / Float(n)
+        let ceil = Float(pow(10, ceilingDb / 20))
+        let cSus = AudioMath.coef(ms: 400)
+        let fastK = Float(1 / (fastReleaseMs / 1000 * AudioMixer.sampleRate)), slowK = Float(1 / (slowReleaseMs / 1000 * AudioMixer.sampleRate))
+        let taps = LookaheadLimiter.ispTaps, nT = 2 * LookaheadLimiter.ispHalf, cap = dqIdx.count
+        let B1 = LookaheadLimiter.box1, B2 = LookaheadLimiter.box2
         var worst: Float = 1
+        taps.withUnsafeBufferPointer { tp in
         for i in 0..<cnt {
             let xl = l[i], xr = r[i]
+            hl[hw] = xl; hr[hw] = xr; hw += 1; if hw == nT { hw = 0 }      // hw now points at the oldest of the 12
             var pk = max(abs(xl), abs(xr))
-            // inter-sample peak between h1 and h2 (cubic through h3,h2,h1,x): (-a + 9b + 9c - d) / 16
-            let ml = abs((-h3.0 + 9 * h2.0 + 9 * h1.0 - xl) * 0.0625), mr = abs((-h3.1 + 9 * h2.1 + 9 * h1.1 - xr) * 0.0625)
-            pk = max(pk, ml, mr)
-            h3 = h2; h2 = h1; h1 = (xl, xr)
+            for p in 0..<3 {                                        // 72 MACs per frame: cheap enough to run always
+                var al: Float = 0, ar: Float = 0
+                var j = hw
+                for k in 0..<nT { let c = tp[p * nT + k]; al += c * hl[j]; ar += c * hr[j]; j += 1; if j == nT { j = 0 } }
+                pk = max(pk, abs(al), abs(ar))
+            }
             let req: Float = pk > ceil ? ceil / pk : 1
-            need[w] = req
-            // sliding minimum over the last n requirements (n is small: direct scan beats a deque here)
-            var m = req
-            for k in 0..<n { m = min(m, need[k]) }
-            boxSum += Double(m) - Double(mins[w]); mins[w] = m
-            let g = Float(boxSum) * invN
-            let outG: Float
-            if g < rel { rel = g; outG = g } else { rel += (g - rel) * cR; outG = rel }
+            // sliding minimum over the last L requirements
+            while dqCount > 0 {
+                let back = (dqHead + dqCount - 1) % cap
+                if dqVal[back] >= req { dqCount -= 1 } else { break }
+            }
+            let ins = (dqHead + dqCount) % cap
+            dqIdx[ins] = t; dqVal[ins] = req; dqCount += 1
+            while dqIdx[dqHead] <= t - L { dqHead += 1; if dqHead == cap { dqHead = 0 }; dqCount -= 1 }
+            let m = dqVal[dqHead]
+            t += 1
+            // two cascaded box filters
+            s1 += Double(m) - Double(b1[b1w]); b1[b1w] = m; b1w += 1; if b1w == B1 { b1w = 0 }
+            let a = Float(s1 / Double(B1))
+            s2 += Double(a) - Double(b2[b2w]); b2[b2w] = a; b2w += 1; if b2w == B2 { b2w = 0 }
+            let g = min(1, Float(s2 / Double(B2)))
+            // program-dependent release
+            if g <= rel { rel = g } else {
+                let k = fastK + (slowK - fastK) * min(1, max(0, sustainDb / 6))
+                rel += (g - rel) * k
+                if rel > g { rel = g }
+            }
+            let grDb: Float = rel >= 0.99999 ? 0 : -20 * log10(rel)
+            sustainDb += (grDb - sustainDb) * cSus
             dl[w] = xl; dr[w] = xr
-            let rp = w + 1 == n ? 0 : w + 1                       // oldest entry = written n-1 samples ago
-            let ol = dl[rp], or = dr[rp]
-            w += 1; if w == n { w = 0 }
-            l[i] = min(max(ol * outG, -ceil), ceil); r[i] = min(max(or * outG, -ceil), ceil)
-            worst = min(worst, outG)
+            let rp = w + 1 == L ? 0 : w + 1                        // oldest entry = written L-1 samples ago
+            let ol = dl[rp] * rel, or = dr[rp] * rel
+            w = rp
+            l[i] = min(max(ol, -ceil), ceil); r[i] = min(max(or, -ceil), ceil)
+            worst = min(worst, rel)
         }
-        if abs(boxSum - Double(n)) < 1e-9 { boxSum = Double(n) }       // kill accumulated float drift while idle
+        }
+        if abs(s1 - Double(B1)) < 1e-6 && abs(s2 - Double(B2)) < 1e-6 { s1 = Double(B1); s2 = Double(B2) }     // idle: kill float drift
         lastReductionDb = -20 * log10(max(worst, 1e-6))
+    }
+}
+
+/// Per-source input guard after the fader (zero latency): a soft-knee peak "gain rider" that leaves the channel bit-exact while its
+/// post-fader peak envelope stays below `kneeDb` (-3 dBFS) and above it pulls the whole channel down smoothly (soft knee -3...0 dBFS,
+/// 8:1 beyond; 3 ms attack / 250 ms release on the gain in dB, 10 ms peak hold), so a hot phone pushed +6 dB arrives at the master
+/// around 0 dBFS instead of +6 dBFS and the master true-peak limiter only shaves the last dB or two.
+/// Deliberately no clipping / instant-attack stage: measured on dense hot programme, a waveform-following guard (instant attack +
+/// tanh) added distortion products at -54 dB where this rider plus the look-ahead master limiter stays at the source's -88 dB.
+/// The master limiter remains the hard ceiling.
+struct InputGuard {
+    var kneeDb = -3.0, ratio = 8.0
+    var attackMs = 3.0, releaseMs = 250.0, holdMs = 10.0, envReleaseMs = 120.0
+    private var env: Float = 0, holdLeft = 0
+    private var grDb: Float = 0
+    private(set) var lastReductionDb: Float = 0
+    /// Returns the largest input (post-fader, pre-guard) sample of the block, for the clip LED.
+    @discardableResult
+    mutating func process(_ l: UnsafeMutablePointer<Float>, _ r: UnsafeMutablePointer<Float>, _ n: Int) -> Float {
+        let kneeLo = Float(kneeDb), width: Float = 3, t0 = kneeLo + width / 2, slope = Float(1 - 1 / max(1, ratio))
+        let cA = AudioMath.coef(ms: attackMs), cR = AudioMath.coef(ms: releaseMs), cE = AudioMath.coef(ms: envReleaseMs)
+        let hold = AudioMath.msToFrames(holdMs), lin = Float(pow(10, kneeDb / 20))
+        var inPk: Float = 0, worst: Float = 0
+        for i in 0..<n {
+            let a = max(abs(l[i]), abs(r[i]))
+            inPk = max(inPk, a)
+            if a >= env { env = a; holdLeft = hold } else if holdLeft > 0 { holdLeft -= 1 } else { env += (a - env) * cE }
+            var target: Float = 0
+            if env > lin {
+                let x = 20 * log10(env), over = x - t0
+                if over >= width / 2 { target = over * slope }
+                else { let k = over + width / 2; target = slope * k * k / (2 * width) }
+            }
+            if grDb == 0 && target == 0 { continue }                    // the common case: exact unity
+            grDb += (target - grDb) * (target > grDb ? cA : cR)
+            if grDb < 1e-4 && target == 0 { grDb = 0; continue }
+            let g = pow(10, -grDb / 20)
+            l[i] *= g; r[i] *= g
+            worst = max(worst, grDb)
+        }
+        if env < 1e-9 { env = 0 }
+        lastReductionDb = worst
+        return inPk
     }
 }
 

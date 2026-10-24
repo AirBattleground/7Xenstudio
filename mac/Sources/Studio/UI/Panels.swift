@@ -188,3 +188,25 @@ struct VideoQualityControls: View {
         }
     }
 }
+
+/// Big buttons that fire one-shot on-air animations over Program; each also has a hotkey.
+struct TriggersPanel: View {
+    @Environment(AppModel.self) var model
+    var body: some View {
+        Panel(title: "Triggers", icon: "bolt.fill") {
+            Text("Fire on-air animations over whatever is on Program. Hotkeys work on the Studio page.").font(Theme.Font.caption).foregroundStyle(Theme.muted)
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+                ForEach(StudioTriggers.all) { t in
+                    Button { model.fire(t.id) } label: {
+                        VStack(spacing: 4) {
+                            Image(systemName: t.icon).font(.system(size: 18, weight: .bold))
+                            Text(t.name).font(.system(size: 11, weight: .bold)).lineLimit(1).minimumScaleFactor(0.8)
+                            Text(t.key.uppercased()).font(Theme.Font.mono(9, .bold)).opacity(0.7)
+                        }.frame(maxWidth: .infinity, minHeight: 58)
+                    }.buttonStyle(.studio(.primary(Color(red: Double((t.accent >> 16) & 255) / 255 * 0.8, green: Double((t.accent >> 8) & 255) / 255 * 0.8, blue: Double(t.accent & 255) / 255 * 0.8)), height: 58))
+                }
+            }
+            Button { model.services.resetKillStreak() } label: { Label("Reset kill count", systemImage: "arrow.counterclockwise") }.buttonStyle(.studio(.secondary, height: 26))
+        }
+    }
+}

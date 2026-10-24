@@ -19,8 +19,15 @@ final class PhoneAudioReader: @unchecked Sendable {
     /// `input` is any ffmpeg input (rtmp:// URL in production, a file in tests); `inputArgs` go before `-i` (e.g. ["-re"]).
     init(input: String, inputArgs: [String] = [], ffmpegPath: String, push: @escaping ([Float], [Float]) -> Void) {
         ffmpeg = ffmpegPath; self.push = push
-        args = ["-nostdin", "-v", "error", "-fflags", "nobuffer", "-flags", "low_delay"] + inputArgs
-            + ["-i", input, "-vn", "-af", "pan=stereo|FL=FL+FC|FR=FR+FC", "-ar", "48000",   // unity mono->stereo (plain -ac 2 would cost 3 dB)
+        // -fflags nobuffer only for live network input: on files it discards what was read while probing (the first ~50-100 ms of an
+        // MP4/MKV prop, ALL of a WAV)
+        let live = input.contains("://")
+        args = ["-nostdin", "-v", "error"] + (live ? ["-fflags", "nobuffer"] : []) + ["-flags", "low_delay"] + inputArgs
+            + ["-i", input, "-vn",
+                // Float end to end (f32le: nothing is clipped at 0 dBFS before the mixer). The pan keeps a stereo input bit-exact
+                // (FL=FL, FR=FR: there is no FC in a stereo layout), upmixes true mono at unity (FL=FR=FC; plain -ac 2 would cost 3 dB)
+                // and folds a centre channel into L/R for 3.0/5.1 sources.
+                "-af", "pan=stereo|FL=FL+FC|FR=FR+FC", "-ar", "48000",
                 "-flush_packets", "1", "-f", "f32le", "pipe:1"]
     }
     static func rtmpURL(deviceId: String, port: Int) -> String { "rtmp://127.0.0.1:\(port)/live/dev_\(deviceId)" }

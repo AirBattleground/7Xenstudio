@@ -32,18 +32,31 @@ struct StudioLinkClient: Sendable {
     }
 
     private func perform(_ req: URLRequest) async throws -> (Data, Int) {
+        let t0 = Date()
         do {
             let (data, resp) = try await session.data(for: req, delegate: NoRedirect())
-            guard let http = resp as? HTTPURLResponse else { throw ABGError.badResponse }
+            guard let http = resp as? HTTPURLResponse else { Self.log(req, status: nil, since: t0); throw ABGError.badResponse }
+            Self.log(req, status: http.statusCode, since: t0)
             return (data, http.statusCode)
-        } catch let e as ABGError { throw e } catch { throw ABGError.unreachable }
+        } catch let e as ABGError { throw e } catch { Self.log(req, status: nil, since: t0, detail: "transport error"); throw ABGError.unreachable }
+    }
+
+    /// One line per request: method, path, status, latency (the path carries the captureId for capture results). Never the key.
+    static func log(_ req: URLRequest, status: Int?, since t0: Date, detail: String = "") {
+        let ms = Int(Date().timeIntervalSince(t0) * 1000)
+        NSLog("%@", "StudioLink: \(req.httpMethod ?? "GET") \(req.url?.path ?? "?") -> status=\(status.map(String.init) ?? "none") latency=\(ms)ms \(detail)")
+    }
+
+    static func errorMessage(_ data: Data) -> String? {
+        struct Err: Decodable { struct E: Decodable { var message: String? }; var error: E? }
+        return (try? JSONDecoder().decode(Err.self, from: data))?.error?.message.flatMap { $0.isEmpty ? nil : $0 }
     }
 
     private func check(_ data: Data, _ status: Int) throws {
         if status == 401 || status == 403 { throw ABGError.keyInvalid }
         guard (200..<300).contains(status) else {
-            struct Err: Decodable { struct E: Decodable { var message: String? }; var error: E? }
-            if let m = (try? JSONDecoder().decode(Err.self, from: data))?.error?.message, !m.isEmpty { throw ABGError.api(m) }
+            if status == 409 { throw ABGError.conflict(Self.errorMessage(data) ?? "AirBattleground refused: the match isn't in the right state.") }
+            if let m = Self.errorMessage(data) { throw ABGError.api(m) }
             throw ABGError.http(status)
         }
     }
@@ -77,7 +90,34 @@ struct StudioLinkClient: Sendable {
         return try await call("POST", "/api/studio-link/broadcasts/\(Self.encodeComponent(id))/heartbeat", json: status, as: R.self).stop ?? false
     }
     func stopBroadcast(id: String) async throws { try await callVoid("POST", "/api/studio-link/broadcasts/\(Self.encodeComponent(id))/stop") }
-    // screenshots (matches/:id/screenshots, multipart) existed in the old client but the native app has no capture UI: not ported.
+    // screenshots (matches/:id/screenshots, multipart): see CaptureWire.swift (uploadCapture)
+
+    // MARK: match control (start / stop) and capture results
+
+    func matchPath(_ matchId: String, _ tail: String) -> String { "/api/studio-link/matches/\(Self.encodeComponent(matchId))/\(tail)" }
+
+    /// POST …/start or …/stop: the answer is the same body as GET …/live (raw, parsed by the caller).
+    /// 409 -> .conflict(server message), 404 -> .matchNotFound, 401/403 -> .keyInvalid.
+    func matchAction(_ matchId: String, _ action: String) async throws -> Data {
+        let (data, status) = try await perform(try request("POST", matchPath(matchId, action)))
+        if status == 404 { throw ABGError.matchNotFound(Self.errorMessage(data)) }
+        try check(data, status)
+        return data
+    }
+    func startMatch(_ matchId: String) async throws -> Data { try await matchAction(matchId, "start") }
+    func stopMatch(_ matchId: String) async throws -> Data { try await matchAction(matchId, "stop") }
+
+    /// GET …/captures/{captureId}. Never throws.
+    func captureResult(matchId: String, captureId: String) async -> CaptureResultReply {
+        do {
+            let (data, status) = try await perform(try request("GET", matchPath(matchId, "captures/\(Self.encodeComponent(captureId))")))
+            if status == 404 { return .notFound }
+            if status == 401 || status == 403 { return .failed(ABGError.keyInvalid.errorDescription ?? "") }
+            guard (200..<300).contains(status) else { return .failed(Self.errorMessage(data) ?? "AirBattleground answered with an error (\(status)).") }
+            guard let r = try? JSONDecoder().decode(CaptureResult.self, from: data) else { return .failed(ABGError.badResponse.errorDescription ?? "") }
+            return .result(r)
+        } catch { return .failed(ABGController.message(error)) }
+    }
 }
 
 private struct AnyEncodable: Encodable {

@@ -2,18 +2,27 @@ import SwiftUI
 struct SceneCard: View {
     @Environment(AppModel.self) var model
     let scene: Scene; let index: Int
+    /// false = shown under "Other scenes" on the Scenes page (not in the active preset): no hotkey, dimmed
+    var inActivePreset = true
     @State private var hover = false
+    @State private var confirmDelete = false
     var onAir: Bool { model.programID == scene.id }
     var selected: Bool { model.previewID == scene.id }
     var tally: Color? { onAir ? Theme.program : selected ? Theme.preview : nil }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             SceneThumbnail(scene: scene, live: onAir ? .program : selected ? .preview : nil)
-                .overlay(alignment: .topLeading) { if index < 9 { KeyCap(text: "\(index + 1)").padding(6) } }
+                .overlay(alignment: .topLeading) { if inActivePreset && index < 9 { KeyCap(text: "\(index + 1)").padding(6) } }
                 .overlay(alignment: .topTrailing) {
                     if hover {
-                        IconButton(systemName: "pencil", label: "Edit scene", size: 22, tint: .white) { model.editingScene = scene }
-                            .background(.black.opacity(0.6), in: Circle()).padding(5).transition(.opacity)
+                        HStack(spacing: 4) {
+                            IconButton(systemName: "pencil", label: "Edit scene", size: 22, tint: .white) { model.editingScene = scene }
+                                .background(.black.opacity(0.6), in: Circle())
+                            IconButton(systemName: "plus.square.on.square", label: "Duplicate scene", size: 22, tint: .white) { model.duplicateScene(scene) }
+                                .background(.black.opacity(0.6), in: Circle())
+                            IconButton(systemName: "trash", label: "Delete scene", size: 22, tint: Color(red: 1, green: 0.55, blue: 0.55)) { confirmDelete = true }
+                                .background(.black.opacity(0.6), in: Circle())
+                        }.padding(5).transition(.opacity)
                     }
                 }
                 .overlay(alignment: .bottomTrailing) {
@@ -23,11 +32,12 @@ struct SceneCard: View {
             HStack(spacing: 6) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(scene.name).font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.text).lineLimit(1)
-                    Text(scene.slots.map(label).joined(separator: " · ")).font(.system(size: 10)).foregroundStyle(Theme.muted).lineLimit(1)
+                    Text(summary).font(.system(size: 10)).foregroundStyle(Theme.muted).lineLimit(1)
                 }
                 Spacer(minLength: 0)
             }.padding(.horizontal, 9).padding(.vertical, 7)
         }
+        .opacity(inActivePreset ? 1 : 0.6)
         .background(hover ? Theme.panelHi.opacity(1) : Theme.panelHi.opacity(0.7), in: RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Theme.Radius.l, style: .continuous).strokeBorder(tally ?? (hover ? Theme.strokeStrong : Theme.stroke), lineWidth: tally == nil ? 1 : 2.5))
@@ -44,16 +54,90 @@ struct SceneCard: View {
             Button("Take to Program") { model.takeScene(scene) }
             Divider()
             Button("Edit…") { model.editingScene = scene }
+            Button { model.duplicateScene(scene) } label: { Label("Duplicate", systemImage: "plus.square.on.square") }
+            if inActivePreset {
+                Button("Move left") { model.moveSceneInActivePreset(scene.id, to: index - 1) }.disabled(index == 0)
+                Button("Move right") { model.moveSceneInActivePreset(scene.id, to: index + 1) }.disabled(index >= model.scenes.count - 1)
+            }
+            Divider()
+            if let a = model.activePreset {
+                if inActivePreset { Button("Remove from “\(a.name)”") { model.removeFromActivePreset(scene) } }
+                else { Button("Add to “\(a.name)”") { model.setScene(scene.id, inPreset: a.id, true) } }
+            }
+            Menu("Presets") {
+                ForEach(model.presetBook.presets) { p in
+                    let member = p.sceneIds.contains(scene.id)
+                    Button { model.setScene(scene.id, inPreset: p.id, !member) } label: {
+                        if member { Label(p.name, systemImage: "checkmark") } else { Text(p.name) }
+                    }
+                }
+            }
+            Divider()
+            Button(role: .destructive) { confirmDelete = true } label: { Label("Delete scene…", systemImage: "trash") }
+            Divider()
+            if model.capture.live.running && model.capture.live.sceneId == scene.id {
+                Button { model.capture.live.stop() } label: { Label("Stop auto capture", systemImage: "stop.circle") }
+            } else {
+                Button { model.capture.autoCapture(sceneId: scene.id) } label: { Label("Auto capture this scene", systemImage: "camera.viewfinder") }
+            }
         }
+        .modifier(SceneDeleteConfirm(scene: scene, isPresented: $confirmDelete))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Scene \(index + 1), \(scene.name)\(onAir ? ", on air" : selected ? ", in preview" : "")")
         .accessibilityHint("Click to preview, double-click to take")
         .accessibilityAddTraits(.isButton)
     }
+    /// What the scene shows, from its layers (the old slot list is empty for layer scenes, which read as "Empty").
+    var summary: String {
+        guard let ls = model.services.layerScenes().first(where: { $0.id == scene.id }) else { return "Empty" }
+        if ls.layers.isEmpty { return "Empty - click ✎ to add something" }
+        var parts: [String] = []
+        for l in ls.layers.reversed() {
+            switch l.kind {
+            case .source(let r, _):
+                if case .prop(let id) = r, let p = model.props.first(where: { $0.id == id }) { parts.append(p.isVideo ? "Video" : "Picture") } else { parts.append(label(r)) }
+            case .image(let spec):
+                if let id = spec.propId, let p = model.props.first(where: { $0.id == id }) { parts.append(p.isVideo ? "Video" : "Picture") } else { parts.append("Art") }
+            case .text: parts.append("Text")
+            default: break
+            }
+        }
+        var seen = Set<String>(); let uniq = parts.filter { seen.insert($0).inserted }
+        return uniq.isEmpty ? "\(ls.layers.count) layer\(ls.layers.count == 1 ? "" : "s")" : uniq.prefix(3).joined(separator: " · ")
+    }
     func label(_ s: SourceRef?) -> String {
         var t = sourceLabel(s, model.devices)
         if case .device(let id)? = s, let d = model.devices.first(where: { $0.id == id }), d.videoReady, let q = d.qualityLabel?.split(separator: " ").first { t += (d.lowQuality ? " ⚠ " : " ") + q }
         return t
+    }
+}
+
+/// Delete confirmation for a scene card. The on-air scene is blocked: the operator must confirm "Cut to black & delete".
+struct SceneDeleteConfirm: ViewModifier {
+    @Environment(AppModel.self) var model
+    let scene: Scene
+    @Binding var isPresented: Bool
+    func body(content: Content) -> some View {
+        let onAir = model.deleteBlock(scene) == .onAir
+        let presets = model.presetBook.presets(containing: scene.id).map(\.name)
+        content.alert(onAir ? "“\(scene.name)” is on air" : "Delete “\(scene.name)”?", isPresented: $isPresented) {
+            if onAir {
+                Button("Cut to black & delete", role: .destructive) { model.deleteScene(scene, cutToBlack: true) }
+            } else {
+                Button("Delete scene", role: .destructive) { model.deleteScene(scene) }
+            }
+            if model.activePreset.map({ $0.sceneIds.contains(scene.id) }) == true && presets.count > 1 {
+                Button("Only remove from “\(model.activePreset?.name ?? "")”") { model.removeFromActivePreset(scene) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            if onAir {
+                Text("It is on Program right now, so it can't just be deleted. Take another scene first, or cut the program to black and delete it.")
+            } else {
+                Text(presets.count > 1 ? "It is removed from the studio and from \(presets.count) presets: \(presets.joined(separator: ", ")). This can't be undone."
+                     : "The scene is removed from the studio. This can't be undone.")
+            }
+        }
     }
 }
 
@@ -68,18 +152,7 @@ struct SceneThumbnail: View {
                 let services = model.services
                 MonitorSurface(provider: { services.frame(live) }, serial: { services.frameSerial(live) }, fps: 15)
             } else {
-                GeometryReader { g in
-                    ForEach(Array(LayoutIcon.rects(scene.layout).enumerated()), id: \.offset) { i, r in
-                        let slot = i < scene.slots.count ? scene.slots[i] : nil
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 3, style: .continuous).fill(LinearGradient(colors: [color(slot).opacity(0.55), color(slot).opacity(0.22)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                            RoundedRectangle(cornerRadius: 3, style: .continuous).strokeBorder(color(slot).opacity(0.7), lineWidth: 1)
-                            Image(systemName: icon(slot)).font(.system(size: min(18, r.height * g.size.height * 0.4))).foregroundStyle(.white.opacity(0.85))
-                        }
-                        .frame(width: r.width * g.size.width, height: r.height * g.size.height)
-                        .offset(x: r.minX * g.size.width, y: r.minY * g.size.height)
-                    }
-                }.padding(6)
+                LayerSceneThumb(scene: scene)
             }
         }
         .aspectRatio(16.0 / 9.0, contentMode: .fit)
@@ -129,7 +202,7 @@ struct SceneEditor: View {
     @Environment(\.dismiss) var dismiss
     @State var draft: Scene
     @State var confirmDelete = false
-    var isNew: Bool { !model.scenes.contains { $0.id == draft.id } }
+    var isNew: Bool { !model.allScenes.contains { $0.id == draft.id } }
 
     func setLayout(_ l: LayoutKind) {
         draft.layout = l
@@ -199,7 +272,7 @@ struct SceneEditor: View {
                 }
             }
             HStack {
-                Button(role: .destructive) { confirmDelete = true } label: { Label("Delete scene", systemImage: "trash") }.disabled(isNew || model.scenes.count <= 1)
+                Button(role: .destructive) { confirmDelete = true } label: { Label("Delete scene", systemImage: "trash") }.disabled(isNew || model.allScenes.count <= 1 || model.programID == draft.id)
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button { var s = draft; s.name = s.name.trimmingCharacters(in: .whitespaces).isEmpty ? "Scene" : s.name; model.save(s); dismiss() } label: { Label("Save scene", systemImage: "checkmark") }
